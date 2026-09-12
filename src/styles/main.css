@@ -33,6 +33,18 @@
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+:root {
+  /* Extra headroom for the macOS traffic lights; zero where the OS draws its
+     own title bar. */
+  --titlebar-inset: 0rem;
+  /* Breathing room above the page title, on every platform. */
+  --page-top: calc(0.75rem + var(--titlebar-inset));
+}
+
+:root[data-platform="macos"] {
+  --titlebar-inset: 2rem;
+}
+
 @layer base {
   html,
   body,

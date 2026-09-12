@@ -4,7 +4,8 @@ defineProps<{ title: string; subtitle?: string }>();
 
 <template>
   <header
-    class="chrome flex h-[68px] shrink-0 items-end gap-4 border-b border-line px-8 pb-4"
+    class="chrome flex shrink-0 items-end gap-4 border-b border-line px-8 pb-4"
+    :style="{ paddingTop: 'var(--page-top)' }"
     data-tauri-drag-region
   >
     <div class="min-w-0">
