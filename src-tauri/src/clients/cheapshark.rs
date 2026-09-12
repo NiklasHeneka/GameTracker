@@ -82,7 +82,11 @@ impl CheapShark {
         })
     }
 
-    async fn get<T: serde::de::DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
+    async fn get<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<T> {
         self.limiter.acquire().await;
         let res = self
             .http
@@ -180,7 +184,10 @@ mod live_tests {
     async fn live_cheapshark_requires_a_descriptive_user_agent() {
         // CheapShark answers 200 with an error object when the UA is generic,
         // which is exactly the trap the client guards against.
-        let naked = reqwest::Client::builder().user_agent("curl/8.0").build().unwrap();
+        let naked = reqwest::Client::builder()
+            .user_agent("curl/8.0")
+            .build()
+            .unwrap();
         let body = naked
             .get("https://www.cheapshark.com/api/1.0/stores")
             .send()
@@ -190,6 +197,9 @@ mod live_tests {
             .await
             .unwrap();
         println!("generic UA -> {}", &body[..body.len().min(120)]);
-        assert!(body.contains("error"), "CheapShark stopped rejecting generic agents");
+        assert!(
+            body.contains("error"),
+            "CheapShark stopped rejecting generic agents"
+        );
     }
 }

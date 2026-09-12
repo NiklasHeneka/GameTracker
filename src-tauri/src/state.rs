@@ -58,7 +58,12 @@ impl AppState {
     /// The PlayStation Store client. Needs no credentials, only the persisted
     /// query hashes, so it is built on first use.
     pub fn ps_store(&self) -> Result<Arc<PsStore>> {
-        if let Some(existing) = self.ps_store.read().unwrap_or_else(|e| e.into_inner()).clone() {
+        if let Some(existing) = self
+            .ps_store
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             return Ok(existing);
         }
         let built = Arc::new(PsStore::new(self.env_path.parent())?);
@@ -82,13 +87,16 @@ impl AppState {
     }
 
     fn rebuild_itad(&self) {
-        let client = self.credentials().itad_api_key.and_then(|key| match Itad::new(key) {
-            Ok(c) => Some(Arc::new(c)),
-            Err(e) => {
-                log::error!("could not build the IsThereAnyDeal client: {e}");
-                None
-            }
-        });
+        let client = self
+            .credentials()
+            .itad_api_key
+            .and_then(|key| match Itad::new(key) {
+                Ok(c) => Some(Arc::new(c)),
+                Err(e) => {
+                    log::error!("could not build the IsThereAnyDeal client: {e}");
+                    None
+                }
+            });
         if client.is_none() {
             log::info!("no IsThereAnyDeal key — falling back to CheapShark (USD)");
         }

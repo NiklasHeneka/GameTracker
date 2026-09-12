@@ -211,7 +211,10 @@ impl Igdb {
         let token: TokenResponse = res.json().await?;
         // Renew an hour early so a long-running session never races expiry.
         let lifetime = Duration::from_secs(token.expires_in.saturating_sub(3600));
-        log::info!("IGDB token acquired, valid for {} days", lifetime.as_secs() / 86400);
+        log::info!(
+            "IGDB token acquired, valid for {} days",
+            lifetime.as_secs() / 86400
+        );
 
         *slot = Some(CachedToken {
             value: token.access_token.clone(),
@@ -221,7 +224,11 @@ impl Igdb {
         Ok(token.access_token)
     }
 
-    async fn query<T: serde::de::DeserializeOwned>(&self, endpoint: &str, body: String) -> Result<T> {
+    async fn query<T: serde::de::DeserializeOwned>(
+        &self,
+        endpoint: &str,
+        body: String,
+    ) -> Result<T> {
         self.limiter.acquire().await;
 
         let send = |token: String, body: String| {
@@ -313,9 +320,16 @@ impl Igdb {
     pub async fn games_by_ids(&self, ids: &[i64]) -> Result<Vec<IgdbGame>> {
         let mut out = Vec::new();
         for chunk in ids.chunks(200) {
-            let list = chunk.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            let list = chunk
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
             let mut games: Vec<IgdbGame> = self
-                .query("games", format!("{GAME_FIELDS} where id = ({list}); limit 500;"))
+                .query(
+                    "games",
+                    format!("{GAME_FIELDS} where id = ({list}); limit 500;"),
+                )
                 .await?;
             out.append(&mut games);
         }
@@ -324,7 +338,10 @@ impl Igdb {
 
     pub async fn game(&self, igdb_id: i64) -> Result<Option<IgdbGame>> {
         let mut games: Vec<IgdbGame> = self
-            .query("games", format!("{GAME_FIELDS} where id = {igdb_id}; limit 1;"))
+            .query(
+                "games",
+                format!("{GAME_FIELDS} where id = {igdb_id}; limit 1;"),
+            )
             .await?;
         Ok(games.pop())
     }
@@ -367,21 +384,39 @@ mod live_tests {
         assert!(hk.cover_image_id().is_some(), "cover.image_id missing");
         assert!(!hk.genres.is_empty(), "genres missing");
         assert!(!hk.platforms.is_empty(), "platforms missing");
-        assert!(hk.total_rating_count.unwrap_or(0) > 100, "total_rating_count missing");
-        assert!(hk.first_release_date.is_some(), "first_release_date missing");
+        assert!(
+            hk.total_rating_count.unwrap_or(0) > 100,
+            "total_rating_count missing"
+        );
+        assert!(
+            hk.first_release_date.is_some(),
+            "first_release_date missing"
+        );
 
         // The mod filter must keep unofficial ports out.
         assert!(
-            !games.iter().any(|g| g.summary.as_deref().unwrap_or("").contains("Unofficial port")),
+            !games.iter().any(|g| g
+                .summary
+                .as_deref()
+                .unwrap_or("")
+                .contains("Unofficial port")),
             "game_type filter let a mod through"
         );
-        println!("search ok — {} results, top: {}", games.len(), games[0].name);
+        println!(
+            "search ok — {} results, top: {}",
+            games.len(),
+            games[0].name
+        );
     }
 
     #[tokio::test]
     #[ignore]
     async fn live_game_carries_steam_appid_and_credits() {
-        let game = client().game(14593).await.unwrap().expect("Hollow Knight by id");
+        let game = client()
+            .game(14593)
+            .await
+            .unwrap()
+            .expect("Hollow Knight by id");
         assert_eq!(game.name, "Hollow Knight");
         assert_eq!(
             game.steam_appid(),
@@ -408,7 +443,10 @@ mod live_tests {
         }
         // 8 requests at 4/s cannot legitimately finish faster than ~1.75s.
         let elapsed = start.elapsed();
-        assert!(elapsed.as_millis() >= 1500, "limiter let a burst through in {elapsed:?}");
+        assert!(
+            elapsed.as_millis() >= 1500,
+            "limiter let a burst through in {elapsed:?}"
+        );
         println!("8 sequential requests took {elapsed:?} (no 429s)");
     }
 }

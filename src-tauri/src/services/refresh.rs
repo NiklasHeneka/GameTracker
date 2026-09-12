@@ -43,7 +43,10 @@ pub fn spawn(app: AppHandle) {
             }
 
             let alerts: Vec<_> = std::mem::take(
-                &mut *state.pending_alerts.lock().unwrap_or_else(|e| e.into_inner()),
+                &mut *state
+                    .pending_alerts
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()),
             );
 
             if enabled {

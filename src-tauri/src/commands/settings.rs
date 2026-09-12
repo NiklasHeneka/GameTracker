@@ -6,7 +6,7 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Result<Settings> {
-    state.db.with(|conn| settings::read(conn))
+    state.db.with(settings::read)
 }
 
 #[tauri::command]

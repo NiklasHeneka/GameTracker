@@ -138,9 +138,15 @@ impl PsStore {
     /// Current price for a concept id, in the region implied by `locale`
     /// (e.g. `de-DE`).
     pub async fn price(&self, concept_id: &str, locale: &str) -> Result<Option<PsPrice>> {
-        let op = self.queries.operations.get("pricingByConceptId").ok_or_else(|| {
-            AppError::Config("ps-store-queries.json has no 'pricingByConceptId' operation".into())
-        })?;
+        let op = self
+            .queries
+            .operations
+            .get("pricingByConceptId")
+            .ok_or_else(|| {
+                AppError::Config(
+                    "ps-store-queries.json has no 'pricingByConceptId' operation".into(),
+                )
+            })?;
 
         self.limiter.acquire().await;
 
@@ -217,7 +223,12 @@ impl PsStore {
     }
 }
 
-fn to_price(raw: &RawPrice, concept_id: &str, locale: &str, _product: Option<&str>) -> Option<PsPrice> {
+fn to_price(
+    raw: &RawPrice,
+    concept_id: &str,
+    locale: &str,
+    _product: Option<&str>,
+) -> Option<PsPrice> {
     // A giveaway can arrive with no base price at all; treat it as zero rather
     // than dropping the offer.
     let base = match raw.base_price_value {
@@ -255,7 +266,7 @@ fn to_price(raw: &RawPrice, concept_id: &str, locale: &str, _product: Option<&st
 fn parse_ps_time(s: &str) -> Option<i64> {
     let trimmed = match s.find('.') {
         Some(dot) => {
-            let tail_start = s[dot..].find(|c: char| c == 'Z' || c == '+' || c == '-')? + dot;
+            let tail_start = s[dot..].find(['Z', '+', '-'])? + dot;
             format!("{}{}", &s[..dot], &s[tail_start..])
         }
         None => s.to_string(),
@@ -272,8 +283,14 @@ fn load(config_dir: Option<&Path>) -> Queries {
                     log::info!("using PlayStation query hashes from {}", path.display());
                     return q;
                 }
-                Ok(Err(e)) => log::warn!("{} is not valid JSON ({e}); using the bundled hashes", path.display()),
-                Err(e) => log::warn!("could not read {} ({e}); using the bundled hashes", path.display()),
+                Ok(Err(e)) => log::warn!(
+                    "{} is not valid JSON ({e}); using the bundled hashes",
+                    path.display()
+                ),
+                Err(e) => log::warn!(
+                    "could not read {} ({e}); using the bundled hashes",
+                    path.display()
+                ),
             }
         }
     }
@@ -298,16 +315,29 @@ mod tests {
     fn the_bundled_query_file_parses_and_has_the_pricing_operation() {
         let q = load(None);
         assert!(q.endpoint.starts_with("https://"));
-        let op = q.operations.get("pricingByConceptId").expect("pricing operation");
+        let op = q
+            .operations
+            .get("pricingByConceptId")
+            .expect("pricing operation");
         assert_eq!(op.operation_name, "metGetPricingDataByConceptId");
-        assert_eq!(op.sha256_hash.len(), 64, "a sha256 hash is 64 hex characters");
+        assert_eq!(
+            op.sha256_hash.len(),
+            64,
+            "a sha256 hash is 64 hex characters"
+        );
         assert!(op.sha256_hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
     fn full_price_reports_no_discount() {
         // Exactly what Elden Ring returned live: base == discounted.
-        let p = to_price(&raw(Some(5999), Some(5999), None, false), "10000333", "de-DE", None).unwrap();
+        let p = to_price(
+            &raw(Some(5999), Some(5999), None, false),
+            "10000333",
+            "de-DE",
+            None,
+        )
+        .unwrap();
         assert_eq!(p.cut, 0);
         assert!((p.price - 59.99).abs() < 1e-9);
         assert_eq!(p.regular, None, "no strikethrough when nothing is off");
@@ -327,7 +357,10 @@ mod tests {
         assert_eq!(p.cut, 50);
         assert!((p.price - 29.99).abs() < 1e-9);
         assert_eq!(p.regular, Some(59.99));
-        assert_eq!(p.expiry, crate::clients::itad::parse_timestamp("2026-10-28T23:59:00Z"));
+        assert_eq!(
+            p.expiry,
+            crate::clients::itad::parse_timestamp("2026-10-28T23:59:00Z")
+        );
     }
 
     #[test]
@@ -381,7 +414,11 @@ mod live_tests {
             .expect("Elden Ring has a PlayStation listing");
 
         assert_eq!(price.currency, "EUR", "locale override did not apply");
-        assert!(price.price > 0.0 && price.price < 200.0, "implausible: {}", price.price);
+        assert!(
+            price.price > 0.0 && price.price < 200.0,
+            "implausible: {}",
+            price.price
+        );
         assert!(price.cut >= 0 && price.cut <= 100);
         println!(
             "Elden Ring PS: {:.2} {} cut={}% expiry={:?}",

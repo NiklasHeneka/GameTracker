@@ -62,7 +62,11 @@ fn selected(games: &[OwnedGame], options: &ImportOptions) -> Vec<OwnedGame> {
         .iter()
         .filter(|g| {
             let played = g.playtime_forever > 0;
-            let wanted = if played { options.include_played } else { options.include_unplayed };
+            let wanted = if played {
+                options.include_played
+            } else {
+                options.include_unplayed
+            };
             wanted && g.playtime_forever >= options.min_minutes
         })
         .cloned()
@@ -177,7 +181,11 @@ pub async fn import_steam_library(
         let hours = game.playtime_forever as f64 / 60.0;
         // Recently played is the one status worth inferring; "finished" is
         // never guessed, because Steam cannot know.
-        let status = if game.playtime_2weeks > 0 { "playing" } else { "want" };
+        let status = if game.playtime_2weeks > 0 {
+            "playing"
+        } else {
+            "want"
+        };
 
         let outcome = state.db.with(|conn| {
             // Metadata may be missing if IGDB dropped the game between the two
@@ -280,7 +288,11 @@ mod tests {
         let games = [game(1, 0), game(2, 500), game(3, 0)];
         let picked = selected(
             &games,
-            &ImportOptions { include_played: false, include_unplayed: true, min_minutes: 0 },
+            &ImportOptions {
+                include_played: false,
+                include_unplayed: true,
+                min_minutes: 0,
+            },
         );
         assert_eq!(picked.len(), 2);
         assert!(picked.iter().all(|g| g.playtime_forever == 0));
@@ -291,7 +303,11 @@ mod tests {
         let games = [game(1, 0), game(2, 500)];
         let picked = selected(
             &games,
-            &ImportOptions { include_played: true, include_unplayed: false, min_minutes: 0 },
+            &ImportOptions {
+                include_played: true,
+                include_unplayed: false,
+                min_minutes: 0,
+            },
         );
         assert_eq!(picked.len(), 1);
         assert_eq!(picked[0].appid, 2);
@@ -302,7 +318,11 @@ mod tests {
         let games = [game(1, 5), game(2, 500)];
         let picked = selected(
             &games,
-            &ImportOptions { include_played: true, include_unplayed: true, min_minutes: 60 },
+            &ImportOptions {
+                include_played: true,
+                include_unplayed: true,
+                min_minutes: 60,
+            },
         );
         assert_eq!(picked.len(), 1);
         assert_eq!(picked[0].appid, 2);
@@ -312,6 +332,9 @@ mod tests {
     fn selecting_nothing_yields_nothing_rather_than_everything() {
         let games = [game(1, 0), game(2, 500)];
         let picked = selected(&games, &ImportOptions::default());
-        assert!(picked.is_empty(), "defaults must not silently import the world");
+        assert!(
+            picked.is_empty(),
+            "defaults must not silently import the world"
+        );
     }
 }

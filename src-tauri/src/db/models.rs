@@ -16,7 +16,7 @@ where
 }
 
 /// A game as the library grid needs it: enough to draw a card.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameSummary {
     pub igdb_id: i64,
@@ -41,7 +41,7 @@ pub struct GameDetail {
     pub publisher: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformRef {
     pub id: i64,
@@ -64,7 +64,7 @@ pub struct SearchResult {
     pub in_library: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryEntry {
     pub id: i64,
@@ -114,7 +114,6 @@ pub struct EntryPatch {
 
 pub const STATUSES: [&str; 4] = ["want", "playing", "finished", "dropped"];
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,7 +124,11 @@ mod tests {
         assert_eq!(absent.my_rating, None, "absent must leave the column alone");
 
         let cleared: EntryPatch = serde_json::from_str(r#"{"myRating":null}"#).unwrap();
-        assert_eq!(cleared.my_rating, Some(None), "explicit null must clear the column");
+        assert_eq!(
+            cleared.my_rating,
+            Some(None),
+            "explicit null must clear the column"
+        );
 
         let set: EntryPatch = serde_json::from_str(r#"{"myRating":9}"#).unwrap();
         assert_eq!(set.my_rating, Some(Some(9)));

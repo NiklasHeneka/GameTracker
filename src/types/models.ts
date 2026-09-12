@@ -289,3 +289,12 @@ export interface Stats {
   topGenres: GenreCount[];
   longestWait: { name: string; days: number } | null;
 }
+
+export interface ImportSummary {
+  entriesInFile: number;
+  added: number;
+  /** Already tracked; left exactly as they were. */
+  skipped: number;
+  exportedAt: number;
+  settingsApplied: boolean;
+}

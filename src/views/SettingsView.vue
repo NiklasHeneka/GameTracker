@@ -5,6 +5,7 @@ import { storeToRefs } from "pinia";
 import PageHeader from "@/components/PageHeader.vue";
 import AppIcon from "@/components/AppIcon.vue";
 import SteamImport from "@/components/SteamImport.vue";
+import BackupPanel from "@/components/BackupPanel.vue";
 import { useSettingsStore } from "@/stores/settings";
 
 const store = useSettingsStore();
@@ -314,6 +315,8 @@ async function reveal() {
         </section>
 
         <SteamImport />
+
+        <BackupPanel />
 
         <p class="mt-8 text-[11.5px] leading-relaxed text-ink-faint">
           Game metadata by IGDB. Prices by IsThereAnyDeal and CheapShark.

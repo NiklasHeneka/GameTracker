@@ -60,8 +60,14 @@ fn load(override_dir: Option<&Path>) -> Calendar {
                     log::info!("using sale calendar from {}", path.display());
                     return cal;
                 }
-                Ok(Err(e)) => log::warn!("{} is not valid JSON ({e}); using the bundled calendar", path.display()),
-                Err(e) => log::warn!("could not read {} ({e}); using the bundled calendar", path.display()),
+                Ok(Err(e)) => log::warn!(
+                    "{} is not valid JSON ({e}); using the bundled calendar",
+                    path.display()
+                ),
+                Err(e) => log::warn!(
+                    "could not read {} ({e}); using the bundled calendar",
+                    path.display()
+                ),
             }
         }
     }
@@ -105,8 +111,13 @@ fn price_during(
              WHERE game_id = ?1 AND country = ?2 AND shop = ?3 AND ts BETWEEN ?4 AND ?5",
         )?
         .query_row(params![game_id, country, shop, start, end], |r| {
-            Ok(r.get::<_, Option<f64>>(0)?
-                .map(|p| (p, r.get::<_, i64>(1).unwrap_or(0), r.get::<_, String>(2).unwrap_or_default())))
+            Ok(r.get::<_, Option<f64>>(0)?.map(|p| {
+                (
+                    p,
+                    r.get::<_, i64>(1).unwrap_or(0),
+                    r.get::<_, String>(2).unwrap_or_default(),
+                )
+            }))
         })
         .optional()?
         .flatten())
@@ -185,8 +196,11 @@ mod tests {
     fn db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         migrations::run(&conn).unwrap();
-        conn.execute("INSERT INTO game (id, name, metadata_fetched) VALUES (1,'T',0)", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO game (id, name, metadata_fetched) VALUES (1,'T',0)",
+            [],
+        )
+        .unwrap();
         conn
     }
 
@@ -195,7 +209,10 @@ mod tests {
         let cal = load(None);
         for shop in crate::settings::DEFAULT_SHOPS {
             assert!(cal.shops.contains_key(shop), "no events for {shop}");
-            assert!(!windows(&cal, shop).is_empty(), "{shop} has no parseable dates");
+            assert!(
+                !windows(&cal, shop).is_empty(),
+                "{shop} has no parseable dates"
+            );
         }
     }
 
@@ -221,7 +238,10 @@ mod tests {
             .into_iter()
             .filter(|w| w.end >= now())
             .collect();
-        assert!(!upcoming.is_empty(), "the calendar has run out of Steam dates");
+        assert!(
+            !upcoming.is_empty(),
+            "the calendar has run out of Steam dates"
+        );
         assert!(
             upcoming.iter().any(|w| w.confirmed),
             "no confirmed Steam dates remain — the calendar needs updating"
@@ -258,13 +278,20 @@ mod tests {
 
         let shops = vec!["Steam".to_string()];
         let out = outlook(&conn, 1, "DE", &shops, None).unwrap();
-        let steam = out.iter().find(|o| o.shop == "Steam").expect("a Steam outlook");
+        let steam = out
+            .iter()
+            .find(|o| o.shop == "Steam")
+            .expect("a Steam outlook");
 
         assert_eq!(steam.event, next.name);
         let last = steam.last_event.as_ref().expect("a previous event");
         assert!(last.had_data);
         assert_eq!(last.best_cut, Some(75));
-        assert_eq!(last.best_price, Some(9.99), "must ignore prices outside the window");
+        assert_eq!(
+            last.best_price,
+            Some(9.99),
+            "must ignore prices outside the window"
+        );
     }
 
     #[test]

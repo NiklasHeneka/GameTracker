@@ -14,7 +14,11 @@ fn score(position: usize, name: &str, term: &str, rating_count: i64) -> f64 {
     let term = term.trim().to_lowercase();
 
     let exact = if name == term { 3.0 } else { 0.0 };
-    let prefix = if exact == 0.0 && name.starts_with(&term) { 1.5 } else { 0.0 };
+    let prefix = if exact == 0.0 && name.starts_with(&term) {
+        1.5
+    } else {
+        0.0
+    };
     // log so a 5000-vote classic outranks a 500-vote sequel without a
     // 100,000-vote outlier flattening everything below it.
     let popularity = ((1 + rating_count.max(0)) as f64).ln();
@@ -49,8 +53,7 @@ pub async fn search_games(state: State<'_, AppState>, query: String) -> Result<V
 
     let mut results: Vec<SearchResult> = games
         .iter()
-        .enumerate()
-        .map(|(_, g)| SearchResult {
+        .map(|g| SearchResult {
             igdb_id: g.id,
             name: g.name.clone(),
             cover_image_id: g.cover_image_id(),
@@ -73,7 +76,11 @@ pub async fn search_games(state: State<'_, AppState>, query: String) -> Result<V
         .collect();
 
     let mut order: Vec<usize> = (0..results.len()).collect();
-    order.sort_by(|a, b| ranked[*b].partial_cmp(&ranked[*a]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|a, b| {
+        ranked[*b]
+            .partial_cmp(&ranked[*a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut reordered: Vec<SearchResult> = order.into_iter().map(|i| results[i].clone()).collect();
     std::mem::swap(&mut results, &mut reordered);
     results.truncate(20);
@@ -93,7 +100,11 @@ pub async fn search_games(state: State<'_, AppState>, query: String) -> Result<V
 /// Full metadata for one game, served from the local cache and refetched from
 /// IGDB when absent or when `refresh` is set.
 #[tauri::command]
-pub async fn get_game(state: State<'_, AppState>, igdb_id: i64, refresh: bool) -> Result<GameDetail> {
+pub async fn get_game(
+    state: State<'_, AppState>,
+    igdb_id: i64,
+    refresh: bool,
+) -> Result<GameDetail> {
     if !refresh {
         if let Some(detail) = state.db.with(|conn| metadata::read_detail(conn, igdb_id))? {
             return Ok(detail);
@@ -131,7 +142,10 @@ mod tests {
     #[test]
     fn the_game_you_named_outranks_its_more_recent_sequel() {
         // IGDB returns Nightreign first for this query.
-        let ranked = rank("elden ring", &[("Elden Ring Nightreign", 106), ("Elden Ring", 2284)]);
+        let ranked = rank(
+            "elden ring",
+            &[("Elden Ring Nightreign", 106), ("Elden Ring", 2284)],
+        );
         assert_eq!(ranked[0], "Elden Ring");
     }
 

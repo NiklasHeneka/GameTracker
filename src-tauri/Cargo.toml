@@ -29,6 +29,7 @@ tauri-plugin-opener = "2.5.4"
 tokio = { version = "1.53.1", features = ["time", "sync"] }
 reqwest = { version = "0.13.3", features = ["json", "gzip", "query"] }
 tauri-plugin-notification = "2.4.0"
+tauri-plugin-dialog = "2.7.3"
 
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

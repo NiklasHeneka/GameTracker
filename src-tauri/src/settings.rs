@@ -120,11 +120,20 @@ pub fn read(conn: &rusqlite::Connection) -> Result<Settings> {
     if settings.enabled_shops.is_empty() {
         settings.enabled_shops = DEFAULT_SHOPS.iter().map(|s| (*s).to_string()).collect();
     }
-    settings
-        .enabled_shops
-        .retain(|s| !s.trim().is_empty());
+    settings.enabled_shops.retain(|s| !s.trim().is_empty());
 
     Ok(settings)
+}
+
+pub fn write(conn: &rusqlite::Connection, s: &Settings) -> Result<()> {
+    set_setting(conn, KEY, &serde_json::to_string(s)?)
+}
+
+pub fn patch(conn: &rusqlite::Connection, p: SettingsPatch) -> Result<Settings> {
+    let mut s = read(conn)?;
+    p.apply_to(&mut s);
+    write(conn, &s)?;
+    Ok(s)
 }
 
 #[cfg(test)]
@@ -174,8 +183,15 @@ mod tests {
     #[test]
     fn a_stored_steam_id_can_be_cleared_again() {
         let conn = db();
-        patch(&conn, serde_json::from_str(r#"{"steamId":"76561197960287930"}"#).unwrap()).unwrap();
-        assert_eq!(read(&conn).unwrap().steam_id.as_deref(), Some("76561197960287930"));
+        patch(
+            &conn,
+            serde_json::from_str(r#"{"steamId":"76561197960287930"}"#).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            read(&conn).unwrap().steam_id.as_deref(),
+            Some("76561197960287930")
+        );
 
         patch(&conn, serde_json::from_str(r#"{"steamId":null}"#).unwrap()).unwrap();
         assert_eq!(read(&conn).unwrap().steam_id, None, "null must clear it");
@@ -196,15 +212,4 @@ mod tests {
         .unwrap();
         assert_eq!(read(&conn).unwrap().enabled_shops, vec!["Steam", "GOG"]);
     }
-}
-
-pub fn write(conn: &rusqlite::Connection, s: &Settings) -> Result<()> {
-    set_setting(conn, KEY, &serde_json::to_string(s)?)
-}
-
-pub fn patch(conn: &rusqlite::Connection, p: SettingsPatch) -> Result<Settings> {
-    let mut s = read(conn)?;
-    p.apply_to(&mut s);
-    write(conn, &s)?;
-    Ok(s)
 }

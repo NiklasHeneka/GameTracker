@@ -57,15 +57,30 @@ impl Steam {
             .gzip(true)
             .build()
             .map_err(|e| AppError::Config(format!("could not build HTTP client: {e}")))?;
-        Ok(Self { http, key, limiter: RateLimiter::per_second(2) })
+        Ok(Self {
+            http,
+            key,
+            limiter: RateLimiter::per_second(2),
+        })
     }
 
-    async fn get<T: serde::de::DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
+    async fn get<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<T> {
         self.limiter.acquire().await;
-        let res = self.http.get(format!("{API}/{path}")).query(query).send().await?;
+        let res = self
+            .http
+            .get(format!("{API}/{path}"))
+            .query(query)
+            .send()
+            .await?;
         let status = res.status();
         if !status.is_success() {
-            let hint = if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::UNAUTHORIZED {
+            let hint = if status == reqwest::StatusCode::FORBIDDEN
+                || status == reqwest::StatusCode::UNAUTHORIZED
+            {
                 " — check STEAM_API_KEY in your .env"
             } else {
                 ""
@@ -150,7 +165,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_steamid64_is_used_as_is() {
-        let id = client().resolve_steam_id("76561197960287930").await.unwrap();
+        let id = client()
+            .resolve_steam_id("76561197960287930")
+            .await
+            .unwrap();
         assert_eq!(id, "76561197960287930");
     }
 
@@ -226,7 +244,10 @@ mod live_tests {
     #[tokio::test]
     #[ignore]
     async fn live_steam_appids_map_back_to_igdb_in_bulk() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join(".env");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join(".env");
         dotenvy::from_path(&root).ok();
         let igdb = crate::clients::igdb::Igdb::new(
             std::env::var("IGDB_CLIENT_ID").unwrap(),
@@ -241,7 +262,11 @@ mod live_tests {
         let appids: Vec<i64> = by_time.iter().take(40).map(|g| g.appid).collect();
 
         let matched = igdb.games_for_steam_appids(&appids).await.unwrap();
-        println!("matched {}/{} of the most-played titles", matched.len(), appids.len());
+        println!(
+            "matched {}/{} of the most-played titles",
+            matched.len(),
+            appids.len()
+        );
         assert!(
             matched.len() * 2 > appids.len(),
             "most well-known Steam games should resolve to IGDB; got {}",

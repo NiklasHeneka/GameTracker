@@ -63,8 +63,7 @@ pub fn get_stats(state: State<'_, AppState>) -> Result<Stats> {
         let wishlist = count("SELECT COUNT(*) FROM entry WHERE owned = 0 AND status = 'want'")?;
         let backlog = count("SELECT COUNT(*) FROM entry WHERE owned = 1 AND status = 'want'")?;
         let playing = count("SELECT COUNT(*) FROM entry WHERE status = 'playing'")?;
-        let finished =
-            count("SELECT COUNT(*) FROM entry WHERE status IN ('finished','dropped')")?;
+        let finished = count("SELECT COUNT(*) FROM entry WHERE status IN ('finished','dropped')")?;
 
         let hours_played: f64 = conn
             .prepare_cached("SELECT COALESCE(SUM(hours_played), 0) FROM entry")?
@@ -106,7 +105,12 @@ pub fn get_stats(state: State<'_, AppState>) -> Result<Stats> {
               GROUP BY g.id ORDER BY c DESC, g.name LIMIT 8",
         )?;
         let top_genres = stmt
-            .query_map([], |r| Ok(GenreCount { name: r.get(0)?, count: r.get(1)? }))?
+            .query_map([], |r| {
+                Ok(GenreCount {
+                    name: r.get(0)?,
+                    count: r.get(1)?,
+                })
+            })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let longest_wait = conn
@@ -117,10 +121,18 @@ pub fn get_stats(state: State<'_, AppState>) -> Result<Stats> {
             )?
             .query_row([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
             .optional()?
-            .map(|(name, added)| LongestWait { name, days: (now() - added) / 86_400 });
+            .map(|(name, added)| LongestWait {
+                name,
+                days: (now() - added) / 86_400,
+            });
 
         Ok(Stats {
-            total, owned, wishlist, backlog, playing, finished,
+            total,
+            owned,
+            wishlist,
+            backlog,
+            playing,
+            finished,
             hours_played,
             average_rating,
             currency: settings.currency,

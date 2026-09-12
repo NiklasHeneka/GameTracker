@@ -110,7 +110,10 @@ impl Itad {
         })
     }
 
-    async fn send<T: serde::de::DeserializeOwned>(&self, req: reqwest::RequestBuilder) -> Result<T> {
+    async fn send<T: serde::de::DeserializeOwned>(
+        &self,
+        req: reqwest::RequestBuilder,
+    ) -> Result<T> {
         self.limiter.acquire().await;
         let res = req.send().await?;
         let status = res.status();
@@ -137,12 +140,17 @@ impl Itad {
     /// Steam appid → ITAD's own game id. The universal join key again.
     pub async fn lookup_by_appid(&self, appid: i64) -> Result<Option<String>> {
         let res: LookupResponse = self
-            .send(self.http.get(format!("{API}/games/lookup/v1")).query(&[
-                ("key", self.key.as_str()),
-                ("appid", &appid.to_string()),
-            ]))
+            .send(
+                self.http
+                    .get(format!("{API}/games/lookup/v1"))
+                    .query(&[("key", self.key.as_str()), ("appid", &appid.to_string())]),
+            )
             .await?;
-        Ok(if res.found { res.game.map(|g| g.id) } else { None })
+        Ok(if res.found {
+            res.game.map(|g| g.id)
+        } else {
+            None
+        })
     }
 
     pub async fn lookup_by_title(&self, title: &str) -> Result<Option<String>> {
@@ -153,7 +161,11 @@ impl Itad {
                     .query(&[("key", self.key.as_str()), ("title", title)]),
             )
             .await?;
-        Ok(if res.found { res.game.map(|g| g.id) } else { None })
+        Ok(if res.found {
+            res.game.map(|g| g.id)
+        } else {
+            None
+        })
     }
 
     /// Current prices across shops. Accepts up to 200 ids per call.
@@ -194,7 +206,12 @@ impl Itad {
     /// months (12 entries for Hollow Knight), which is far too short to say
     /// anything about how often a game goes on sale. Asking for several years
     /// returns hundreds of entries instead.
-    pub async fn history(&self, id: &str, country: &str, since_years: i64) -> Result<Vec<HistoryEntry>> {
+    pub async fn history(
+        &self,
+        id: &str,
+        country: &str,
+        since_years: i64,
+    ) -> Result<Vec<HistoryEntry>> {
         let since = format_date(crate::db::now() - since_years * 365 * 86_400);
         self.send(self.http.get(format!("{API}/games/history/v2")).query(&[
             ("key", self.key.as_str()),
@@ -204,7 +221,6 @@ impl Itad {
         ]))
         .await
     }
-
 }
 
 /// Render unix seconds as an RFC 3339 UTC date, which is what `since` expects.
@@ -266,8 +282,14 @@ mod tests {
     #[test]
     fn parses_real_itad_timestamps() {
         // Values taken from live responses, cross-checked against `date -u`.
-        assert_eq!(parse_timestamp("2020-11-27T15:24:08+01:00"), Some(1606487048));
-        assert_eq!(parse_timestamp("2026-08-13T17:00:00+02:00"), Some(1786633200));
+        assert_eq!(
+            parse_timestamp("2020-11-27T15:24:08+01:00"),
+            Some(1606487048)
+        );
+        assert_eq!(
+            parse_timestamp("2026-08-13T17:00:00+02:00"),
+            Some(1786633200)
+        );
         assert_eq!(parse_timestamp("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(parse_timestamp("2000-03-01T00:00:00Z"), Some(951868800));
     }
@@ -331,7 +353,11 @@ mod live_tests {
         assert!(!deals.is_empty(), "no shops returned");
         // Region actually applied — DE must not come back in USD.
         assert_eq!(deals[0].price.currency, "EUR", "country parameter ignored?");
-        println!("{} shops, cheapest {:?}", deals.len(), deals[0].price.amount);
+        println!(
+            "{} shops, cheapest {:?}",
+            deals.len(),
+            deals[0].price.amount
+        );
 
         let low = itad
             .history_lows(&ids, "DE")
@@ -343,18 +369,33 @@ mod live_tests {
             .expect("an all-time low");
         assert!(low.price.amount > 0.0);
         assert!(low.timestamp.as_deref().and_then(parse_timestamp).is_some());
-        println!("all-time low {:.2} {} at {:?}", low.price.amount, low.price.currency,
-                 low.shop.map(|s| s.name));
+        println!(
+            "all-time low {:.2} {} at {:?}",
+            low.price.amount,
+            low.price.currency,
+            low.shop.map(|s| s.name)
+        );
 
         let history = itad.history(&uuid, "DE", 5).await.unwrap();
         assert!(!history.is_empty(), "no price history");
         // Every entry must carry a parseable timestamp, or the sparkline and
         // "last on sale" silently lose data.
         for h in &history {
-            assert!(parse_timestamp(&h.timestamp).is_some(), "bad ts {}", h.timestamp);
+            assert!(
+                parse_timestamp(&h.timestamp).is_some(),
+                "bad ts {}",
+                h.timestamp
+            );
         }
-        let discounts = history.iter().filter(|h| h.deal.as_ref().map(|d| d.cut).unwrap_or(0) > 0).count();
-        println!("{} history points, {} of them discounts", history.len(), discounts);
+        let discounts = history
+            .iter()
+            .filter(|h| h.deal.as_ref().map(|d| d.cut).unwrap_or(0) > 0)
+            .count();
+        println!(
+            "{} history points, {} of them discounts",
+            history.len(),
+            discounts
+        );
 
         // Without `since` ITAD returns roughly three months, far too short to
         // describe how often a game is discounted.

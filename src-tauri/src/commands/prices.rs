@@ -63,7 +63,9 @@ async fn refresh_one(state: &AppState, game_id: i64, country: &str) -> Result<Op
     }
     let pc_note = pc?;
     // Baseline for the "saved by waiting" stat; a no-op after the first time.
-    state.db.with(|conn| pricing::stamp_price_at_add(conn, game_id, country))?;
+    state
+        .db
+        .with(|conn| pricing::stamp_price_at_add(conn, game_id, country))?;
     Ok(match (pc_note, ps) {
         (Some(note), _) => Some(note),
         (None, Err(e)) => Some(e.to_string()),
@@ -78,7 +80,9 @@ async fn refresh_playstation(
     game_id: i64,
     country: &str,
 ) -> Result<Option<String>> {
-    let enabled = state.db.with(|conn| Ok(settings::read(conn)?.track_playstation))?;
+    let enabled = state
+        .db
+        .with(|conn| Ok(settings::read(conn)?.track_playstation))?;
     if !enabled {
         return Ok(None);
     }
@@ -164,7 +168,9 @@ async fn refresh_pc(state: &AppState, game_id: i64, country: &str) -> Result<Opt
             .map(|g| pricing::rows_from_itad(&g.deals))
             .unwrap_or_default();
         let no_offers = rows.is_empty();
-        state.db.with(|conn| pricing::replace_snapshots(conn, game_id, country, &rows))?;
+        state
+            .db
+            .with(|conn| pricing::replace_snapshots(conn, game_id, country, &rows))?;
 
         if let Some(low) = client.history_lows(&ids, country).await?.into_iter().next() {
             if let Some(l) = low.low {
@@ -188,7 +194,7 @@ async fn refresh_pc(state: &AppState, game_id: i64, country: &str) -> Result<Opt
 
         // Five years is enough to see a genuine seasonal pattern.
         let history = client.history(&uuid, country, 5).await?;
-        let points: Vec<(i64, String, String, f64, Option<f64>, i64)> = history
+        let points: Vec<pricing::HistoryRow> = history
             .iter()
             .filter_map(|h| {
                 let ts = itad::parse_timestamp(&h.timestamp)?;
@@ -203,7 +209,9 @@ async fn refresh_pc(state: &AppState, game_id: i64, country: &str) -> Result<Opt
                 ))
             })
             .collect();
-        state.db.with(|conn| pricing::save_history(conn, game_id, country, &points))?;
+        state
+            .db
+            .with(|conn| pricing::save_history(conn, game_id, country, &points))?;
 
         // A resolved game with no offers usually means this entry has been
         // superseded: Skyrim, GTA V and the like stay listed under their
@@ -251,7 +259,9 @@ async fn refresh_pc(state: &AppState, game_id: i64, country: &str) -> Result<Opt
     let names = cs.store_names().await?;
     let detail = cs.game(&cs_id).await?;
     let rows = pricing::rows_from_cheapshark(&detail, &names);
-    state.db.with(|conn| pricing::replace_snapshots(conn, game_id, country, &rows))?;
+    state
+        .db
+        .with(|conn| pricing::replace_snapshots(conn, game_id, country, &rows))?;
 
     if let Some(ever) = &detail.cheapest_price_ever {
         if let Ok(price) = ever.price.parse::<f64>() {
@@ -288,22 +298,22 @@ pub async fn get_prices(
     })?;
     let dir = state.env_path.parent().map(|p| p.to_path_buf());
 
-    let cached = state.db.with(|conn| {
-        pricing::overview(conn, igdb_id, &country, &shops, dir.as_deref(), None)
-    })?;
+    let cached = state
+        .db
+        .with(|conn| pricing::overview(conn, igdb_id, &country, &shops, dir.as_deref(), None))?;
 
     if !force && !cached.stale && !cached.groups.is_empty() {
         // Re-derive the caveat so a cached CheapShark result stays labelled.
         let note = state.itad().is_none().then(|| CHEAPSHARK_NOTE.to_string());
-        return state.db.with(|conn| {
-            pricing::overview(conn, igdb_id, &country, &shops, dir.as_deref(), note)
-        });
+        return state
+            .db
+            .with(|conn| pricing::overview(conn, igdb_id, &country, &shops, dir.as_deref(), note));
     }
 
     let note = refresh_one(&state, igdb_id, &country).await?;
-    state.db.with(|conn| {
-        pricing::overview(conn, igdb_id, &country, &shops, dir.as_deref(), note)
-    })
+    state
+        .db
+        .with(|conn| pricing::overview(conn, igdb_id, &country, &shops, dir.as_deref(), note))
 }
 
 #[tauri::command]
@@ -353,7 +363,11 @@ pub async fn refresh_all(state: &AppState) -> Result<RefreshReport> {
         if notify {
             for alert in raise_alerts(state, game_id, &country)? {
                 report.alerts += 1;
-                state.pending_alerts.lock().unwrap_or_else(|e| e.into_inner()).push(alert);
+                state
+                    .pending_alerts
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(alert);
             }
         }
     }
@@ -372,7 +386,9 @@ fn raise_alerts(state: &AppState, game_id: i64, country: &str) -> Result<Vec<Pri
             .query_row([game_id], |r| r.get(0))
             .optional()?
             .flatten();
-        let Some(target) = target else { return Ok(Vec::new()) };
+        let Some(target) = target else {
+            return Ok(Vec::new());
+        };
 
         let hit: Option<(String, f64, String)> = conn
             .prepare_cached(
@@ -384,7 +400,9 @@ fn raise_alerts(state: &AppState, game_id: i64, country: &str) -> Result<Vec<Pri
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             })
             .optional()?;
-        let Some((shop, price, currency)) = hit else { return Ok(Vec::new()) };
+        let Some((shop, price, currency)) = hit else {
+            return Ok(Vec::new());
+        };
 
         let inserted = conn
             .prepare_cached(
@@ -402,7 +420,14 @@ fn raise_alerts(state: &AppState, game_id: i64, country: &str) -> Result<Vec<Pri
             .prepare_cached("SELECT name FROM game WHERE id = ?1")?
             .query_row([game_id], |r| r.get(0))?;
 
-        Ok(vec![PriceAlert { game_id, name, shop, price, currency, target }])
+        Ok(vec![PriceAlert {
+            game_id,
+            name,
+            shop,
+            price,
+            currency,
+            target,
+        }])
     })
 }
 
@@ -468,7 +493,7 @@ pub fn list_active_deals(state: State<'_, AppState>) -> Result<Vec<DealRow>> {
         }
 
         let mut out: Vec<DealRow> = best.into_values().collect();
-        out.sort_by(|a, b| b.cut.cmp(&a.cut));
+        out.sort_by_key(|d| std::cmp::Reverse(d.cut));
         Ok(out)
     })
 }
@@ -500,9 +525,23 @@ pub fn set_manual_price(
                fetched_at = excluded.fetched_at",
         )?
         .execute(params![
-            igdb_id, shop, country, platform_family, currency, price, url, now()
+            igdb_id,
+            shop,
+            country,
+            platform_family,
+            currency,
+            price,
+            url,
+            now()
         ])?;
         let s = settings::read(conn)?;
-        pricing::overview(conn, igdb_id, &s.country, &s.enabled_shops, dir.as_deref(), None)
+        pricing::overview(
+            conn,
+            igdb_id,
+            &s.country,
+            &s.enabled_shops,
+            dir.as_deref(),
+            None,
+        )
     })
 }

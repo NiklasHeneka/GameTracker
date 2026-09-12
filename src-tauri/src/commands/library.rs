@@ -53,7 +53,7 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, LibraryEntry)> {
 fn read_entry(conn: &Connection, id: i64) -> Result<LibraryEntry> {
     let found = conn
         .prepare_cached(&format!("SELECT {COLUMNS} FROM entry WHERE id = ?1"))?
-        .query_row([id], |r| hydrate(r))
+        .query_row([id], hydrate)
         .optional()?;
 
     let Some((game_id, mut entry)) = found else {
@@ -67,11 +67,16 @@ fn read_entry(conn: &Connection, id: i64) -> Result<LibraryEntry> {
 
 #[tauri::command]
 pub fn list_entries(state: State<'_, AppState>) -> Result<Vec<LibraryEntry>> {
-    state.db.with(|conn| {
+    state.db.with(all_entries)
+}
+
+/// Every entry with its game summary. Shared with the backup exporter.
+pub fn all_entries(conn: &Connection) -> Result<Vec<LibraryEntry>> {
+    {
         let mut stmt = conn.prepare_cached(&format!(
             "SELECT {COLUMNS} FROM entry ORDER BY priority ASC, added_at DESC"
         ))?;
-        let rows = stmt.query_map([], |r| hydrate(r))?;
+        let rows = stmt.query_map([], hydrate)?;
 
         let mut out = Vec::new();
         for row in rows {
@@ -87,7 +92,7 @@ pub fn list_entries(state: State<'_, AppState>) -> Result<Vec<LibraryEntry>> {
             }
         }
         Ok(out)
-    })
+    }
 }
 
 #[tauri::command]
@@ -142,7 +147,11 @@ pub async fn add_entry(
 }
 
 #[tauri::command]
-pub fn update_entry(state: State<'_, AppState>, id: i64, patch: EntryPatch) -> Result<LibraryEntry> {
+pub fn update_entry(
+    state: State<'_, AppState>,
+    id: i64,
+    patch: EntryPatch,
+) -> Result<LibraryEntry> {
     state.db.with(|conn| {
         let mut entry = read_entry(conn, id)?;
         let ts = now();

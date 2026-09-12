@@ -40,9 +40,19 @@ pub fn replace_snapshots(
         let ts = now();
         for r in rows {
             stmt.execute(params![
-                game_id, r.shop, country, r.platform_family, r.currency, r.price,
-                r.regular, r.cut, r.url, Option::<String>::None, r.sale_expiry,
-                r.source, ts
+                game_id,
+                r.shop,
+                country,
+                r.platform_family,
+                r.currency,
+                r.price,
+                r.regular,
+                r.cut,
+                r.url,
+                Option::<String>::None,
+                r.sale_expiry,
+                r.source,
+                ts
             ])?;
         }
     }
@@ -87,8 +97,18 @@ pub fn upsert_snapshot(
            source = excluded.source, fetched_at = excluded.fetched_at",
     )?
     .execute(params![
-        game_id, row.shop, country, row.platform_family, row.currency, row.price,
-        row.regular, row.cut, row.url, row.sale_expiry, row.source, now()
+        game_id,
+        row.shop,
+        country,
+        row.platform_family,
+        row.currency,
+        row.price,
+        row.regular,
+        row.cut,
+        row.url,
+        row.sale_expiry,
+        row.source,
+        now()
     ])?;
     Ok(())
 }
@@ -116,11 +136,15 @@ pub fn save_low(conn: &Connection, game_id: i64, country: &str, low: &PriceLow) 
     Ok(())
 }
 
+/// One recorded price change: timestamp, shop, currency, price, regular
+/// price, and the discount percentage.
+pub type HistoryRow = (i64, String, String, f64, Option<f64>, i64);
+
 pub fn save_history(
     conn: &Connection,
     game_id: i64,
     country: &str,
-    entries: &[(i64, String, String, f64, Option<f64>, i64)],
+    entries: &[HistoryRow],
 ) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     {
@@ -131,7 +155,9 @@ pub fn save_history(
                price = excluded.price, regular = excluded.regular, cut = excluded.cut",
         )?;
         for (ts, shop, currency, price, regular, cut) in entries {
-            stmt.execute(params![game_id, country, ts, shop, currency, price, regular, cut])?;
+            stmt.execute(params![
+                game_id, country, ts, shop, currency, price, regular, cut
+            ])?;
         }
     }
     tx.commit()?;
@@ -216,7 +242,11 @@ fn read_history(conn: &Connection, game_id: i64, country: &str) -> Result<Vec<Hi
          ORDER BY day ASC",
     )?;
     let rows = stmt.query_map(params![game_id, country], |r| {
-        Ok(HistoryPoint { ts: r.get(0)?, price: r.get(1)?, cut: r.get(2)? })
+        Ok(HistoryPoint {
+            ts: r.get(0)?,
+            price: r.get(1)?,
+            cut: r.get(2)?,
+        })
     })?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
@@ -308,10 +338,16 @@ pub fn overview(
 
     let mut groups: Vec<PriceGroup> = Vec::new();
     for family in ["pc", "playstation", "nintendo", "xbox"] {
-        let group: Vec<PriceRow> =
-            rows.iter().filter(|r| r.platform_family == family).cloned().collect();
+        let group: Vec<PriceRow> = rows
+            .iter()
+            .filter(|r| r.platform_family == family)
+            .cloned()
+            .collect();
         if !group.is_empty() {
-            groups.push(PriceGroup { family: family.into(), rows: group });
+            groups.push(PriceGroup {
+                family: family.into(),
+                rows: group,
+            });
         }
     }
 
@@ -366,15 +402,19 @@ pub fn rows_from_cheapshark(
             let regular: Option<f64> = d.retail_price.parse().ok();
             let savings: f64 = d.savings.parse().unwrap_or(0.0);
             Some(PriceRow {
-                shop: store_names.get(&d.store_id).cloned().unwrap_or_else(|| {
-                    format!("Store {}", d.store_id)
-                }),
+                shop: store_names
+                    .get(&d.store_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Store {}", d.store_id)),
                 platform_family: "pc".into(),
                 currency: cheapshark::CURRENCY.into(),
                 price,
                 regular,
                 cut: savings.round() as i64,
-                url: Some(format!("https://www.cheapshark.com/redirect?dealID={}", d.deal_id)),
+                url: Some(format!(
+                    "https://www.cheapshark.com/redirect?dealID={}",
+                    d.deal_id
+                )),
                 // CheapShark does not publish when a sale ends.
                 sale_expiry: None,
                 source: "cheapshark".into(),
@@ -391,7 +431,11 @@ mod tests {
     const DAY: i64 = 86_400;
 
     fn point(days_ago: i64, price: f64, cut: i64) -> HistoryPoint {
-        HistoryPoint { ts: now() - days_ago * DAY, price, cut }
+        HistoryPoint {
+            ts: now() - days_ago * DAY,
+            price,
+            cut,
+        }
     }
 
     #[test]
@@ -400,7 +444,7 @@ mod tests {
             point(300, 4.99, 75), // deepest, but old
             point(90, 7.49, 50),  // most recent discount
             point(200, 9.99, 33),
-            point(10, 14.99, 0),  // back to full price
+            point(10, 14.99, 0), // back to full price
         ];
         let last = last_sale(&history, "EUR").expect("a past sale");
         assert_eq!(last.cut, 50);
@@ -419,7 +463,11 @@ mod tests {
         let mut history = Vec::new();
         for day in (0..100).rev() {
             let discounted = day % 10 < 6;
-            history.push(point(day, if discounted { 5.0 } else { 15.0 }, if discounted { 66 } else { 0 }));
+            history.push(point(
+                day,
+                if discounted { 5.0 } else { 15.0 },
+                if discounted { 66 } else { 0 },
+            ));
         }
         history.push(point(3, 3.0, 80));
 
@@ -432,7 +480,10 @@ mod tests {
     #[test]
     fn a_short_window_says_nothing_rather_than_extrapolating() {
         // Two weeks cannot characterise a year.
-        let history: Vec<_> = (0..14).rev().map(|d| point(d, 10.0, if d < 7 { 50 } else { 0 })).collect();
+        let history: Vec<_> = (0..14)
+            .rev()
+            .map(|d| point(d, 10.0, if d < 7 { 50 } else { 0 }))
+            .collect();
         assert!(discount_pattern(&history).is_none());
         assert!(discount_pattern(&[]).is_none());
     }
@@ -440,9 +491,16 @@ mod tests {
     #[test]
     fn a_game_discounted_almost_always_reports_a_high_share() {
         // The real Disco Elysium shape: on sale somewhere most days.
-        let history: Vec<_> = (0..600).rev().map(|d| point(d, 9.0, if d % 3 == 0 { 0 } else { 70 })).collect();
+        let history: Vec<_> = (0..600)
+            .rev()
+            .map(|d| point(d, 9.0, if d % 3 == 0 { 0 } else { 70 }))
+            .collect();
         let p = discount_pattern(&history).unwrap();
-        assert!(p.share_percent > 60, "expected a high share, got {}", p.share_percent);
+        assert!(
+            p.share_percent > 60,
+            "expected a high share, got {}",
+            p.share_percent
+        );
     }
 
     fn seeded_db() -> Connection {
@@ -483,10 +541,20 @@ mod tests {
         save_history(&conn, 1, "DE", &entries).unwrap();
 
         let history = read_history(&conn, 1, "DE").unwrap();
-        assert_eq!(history.len(), 3, "one point per day, not one per shop per day");
-        assert!((history[0].price - 14.79).abs() < 1e-9, "day one takes the cheapest shop");
+        assert_eq!(
+            history.len(),
+            3,
+            "one point per day, not one per shop per day"
+        );
+        assert!(
+            (history[0].price - 14.79).abs() < 1e-9,
+            "day one takes the cheapest shop"
+        );
         assert!((history[1].price - 7.39).abs() < 1e-9);
-        assert_eq!(history[1].cut, 50, "cut must come from the row that was cheapest");
+        assert_eq!(
+            history[1].cut, 50,
+            "cut must come from the row that was cheapest"
+        );
         assert_eq!(history[2].cut, 0);
     }
 
@@ -504,8 +572,14 @@ mod tests {
         let rows = rows_from_cheapshark(&detail, &names);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].shop, "Steam");
-        assert_eq!(rows[0].currency, "USD", "CheapShark has no region parameter");
-        assert_eq!(rows[0].cut, 50, "savings string must round to a whole percent");
+        assert_eq!(
+            rows[0].currency, "USD",
+            "CheapShark has no region parameter"
+        );
+        assert_eq!(
+            rows[0].cut, 50,
+            "savings string must round to a whole percent"
+        );
         assert!(rows[0].sale_expiry.is_none());
         assert_eq!(rows[0].source, "cheapshark");
     }
@@ -539,7 +613,7 @@ mod tests {
         assert_eq!(rows[0].currency, "EUR");
         assert_eq!(rows[0].cut, 50);
         assert_eq!(rows[0].sale_expiry, Some(1789052400)); // 2026-09-10T15:00Z
-        // Roughly half of live deals have no expiry; that must stay optional.
+                                                           // Roughly half of live deals have no expiry; that must stay optional.
         assert!(rows[1].sale_expiry.is_none());
     }
 }

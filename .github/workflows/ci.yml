@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # WebKitGTK and friends are only needed on Linux; macOS and Windows ship
+      # their own webviews.
+
+      - run: npm ci
+
+      - name: Typecheck and build the frontend
+        run: npm run build
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      # Live tests are #[ignore]d: they need real API keys and would make CI
+      # depend on third-party uptime.
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+  bundle:
+    name: Bundle (${{ matrix.os }})
+    # Only worth the minutes once the fast checks have passed.
+    needs: check
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --target universal-apple-darwin
+          - os: windows-latest
+            args: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # Unsigned: signing needs an Apple Developer certificate and a Windows
+      # code-signing certificate, neither of which a personal project has.
+      # Expect a Gatekeeper warning on first launch.
+      - name: Build installers
+        run: npm run tauri -- build ${{ matrix.args }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gametracker-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi

@@ -8,5 +8,8 @@ pub mod steam;
 /// a missing or generic User-Agent outright, and it is simply good manners on
 /// free endpoints.
 pub fn user_agent() -> String {
-    format!("GameTracker/{} (personal, non-commercial)", env!("CARGO_PKG_VERSION"))
+    format!(
+        "GameTracker/{} (personal, non-commercial)",
+        env!("CARGO_PKG_VERSION")
+    )
 }
