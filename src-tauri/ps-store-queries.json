@@ -1,0 +1,25 @@
+{
+  "_readme": [
+    "PlayStation Store GraphQL access.",
+    "",
+    "The endpoint accepts ONLY persisted queries whose sha256Hash Sony has",
+    "whitelisted — arbitrary GraphQL is refused, and an unknown hash returns",
+    "'Query <hash> not whitelisted'. Sony rotates these whenever the store",
+    "front-end is redeployed, which is why they live in a file rather than in",
+    "the binary: a rotation needs an edit here, not a new build.",
+    "",
+    "To refresh a hash: open store.playstation.com in a browser, watch the",
+    "network tab for a request to /api/graphql/v1/op, and copy the sha256Hash",
+    "from its 'extensions' query parameter for the matching operationName.",
+    "",
+    "Copy this file next to your .env to override it; that copy wins."
+  ],
+  "version": 1,
+  "endpoint": "https://web.np.playstation.com/api/graphql/v1/op",
+  "operations": {
+    "pricingByConceptId": {
+      "operationName": "metGetPricingDataByConceptId",
+      "sha256Hash": "abcb311ea830e679fe2b697a27f755764535d825b24510ab1239a4ca3092bd09"
+    }
+  }
+}

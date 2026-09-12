@@ -1,0 +1,59 @@
+{
+  "_readme": [
+    "Known storewide sale events. Copy this file next to your .env to override it —",
+    "GameTracker prefers your copy if one exists, so corrections survive updates.",
+    "",
+    "'confirmed: true' means the store has published the dates. Everything else is",
+    "estimated from previous years and shown as an estimate in the app.",
+    "Dates are inclusive, in UTC, formatted YYYY-MM-DD.",
+    "",
+    "Past events matter as much as future ones: they are how the app works out what",
+    "a game cost during the last run of the same sale."
+  ],
+  "version": 1,
+  "shops": {
+    "Steam": [
+      { "name": "Spring Sale", "start": "2025-03-13", "end": "2025-03-20" },
+      { "name": "Summer Sale", "start": "2025-06-26", "end": "2025-07-10" },
+      { "name": "Autumn Sale", "start": "2025-09-29", "end": "2025-10-06", "confirmed": true },
+      { "name": "Winter Sale", "start": "2025-12-18", "end": "2026-01-05" },
+      { "name": "Spring Sale", "start": "2026-03-19", "end": "2026-03-26", "confirmed": true },
+      { "name": "Summer Sale", "start": "2026-06-25", "end": "2026-07-09", "confirmed": true },
+      { "name": "Autumn Sale", "start": "2026-10-01", "end": "2026-10-08", "confirmed": true },
+      { "name": "Winter Sale", "start": "2026-12-17", "end": "2027-01-04", "confirmed": true },
+      { "name": "Spring Sale", "start": "2027-03-18", "end": "2027-03-25" },
+      { "name": "Summer Sale", "start": "2027-06-24", "end": "2027-07-08", "confirmed": true }
+    ],
+    "GOG": [
+      { "name": "Spring Sale", "start": "2026-03-26", "end": "2026-04-06" },
+      { "name": "Summer Sale", "start": "2026-06-11", "end": "2026-06-22" },
+      { "name": "Autumn Sale", "start": "2026-10-08", "end": "2026-10-19" },
+      { "name": "Black Friday Sale", "start": "2026-11-24", "end": "2026-12-01" },
+      { "name": "Winter Sale", "start": "2026-12-11", "end": "2027-01-05" },
+      { "name": "Summer Sale", "start": "2027-06-10", "end": "2027-06-21" }
+    ],
+    "Epic Game Store": [
+      { "name": "MEGA Sale", "start": "2026-05-14", "end": "2026-06-11", "confirmed": true },
+      { "name": "Summer Sale", "start": "2026-07-16", "end": "2026-08-06" },
+      { "name": "Black Friday Sale", "start": "2026-11-25", "end": "2026-12-02" },
+      { "name": "Holiday Sale", "start": "2026-12-17", "end": "2027-01-08" },
+      { "name": "Spring Sale", "start": "2027-03-25", "end": "2027-04-15" },
+      { "name": "MEGA Sale", "start": "2027-05-13", "end": "2027-06-10" }
+    ],
+    "Microsoft Store": [
+      { "name": "Ultimate Game Sale", "start": "2026-07-15", "end": "2026-07-29", "confirmed": true },
+      { "name": "Black Friday Sale", "start": "2026-11-24", "end": "2026-12-01" },
+      { "name": "Countdown Sale", "start": "2026-12-18", "end": "2027-01-05" },
+      { "name": "Spring Sale", "start": "2027-04-07", "end": "2027-04-21" },
+      { "name": "Ultimate Game Sale", "start": "2027-07-14", "end": "2027-07-28" }
+    ],
+    "PlayStation Store": [
+      { "name": "Days of Play", "start": "2026-05-27", "end": "2026-06-10", "confirmed": true },
+      { "name": "Summer Sale", "start": "2026-07-15", "end": "2026-08-19" },
+      { "name": "Halloween Sale", "start": "2026-10-14", "end": "2026-10-28" },
+      { "name": "Black Friday Sale", "start": "2026-11-20", "end": "2026-12-01" },
+      { "name": "Holiday Sale", "start": "2026-12-16", "end": "2027-01-19" },
+      { "name": "Days of Play", "start": "2027-05-26", "end": "2027-06-09" }
+    ]
+  }
+}
