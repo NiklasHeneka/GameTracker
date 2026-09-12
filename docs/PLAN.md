@@ -521,11 +521,35 @@ already built, for the platform explicitly called out as least important.
 Nintendo is not unserved in the meantime: manual price entry offers "Nintendo eShop" as a
 platform, and those prices survive every automatic refresh.
 
-**Phase 4 — ship**
-- Icons, app metadata, `.dmg` (universal macOS) + `.msi`/NSIS (Windows) via
-  `tauri build`; GitHub Actions matrix build; optional `tauri-plugin-updater`.
-- JSON backup export/import.
-- README with the "get your own API keys" walkthrough.
+**Phase 4 — ship** — ✅ **done except the updater**
+- ✅ App icon: the same 2×2 mark as the sidebar, generated from a committed
+  `icon-source.png` so the set can be rebuilt.
+- ✅ `tauri build` verified end to end on macOS: a 19 MB `.app` and a 6.7 MB compressed
+  `.dmg`, correct identifier and version, and the release binary launches and reads the
+  existing database.
+- ✅ JSON backup export/import, additive on the way in.
+- ✅ GitHub Actions: typecheck, clippy (`-D warnings`), rustfmt and tests on macOS and
+  Windows; installers bundled only on a tag or manual run.
+- ❌ Auto-updater — deferred, see below.
+
+Notes from the build:
+- Builds are **unsigned**. Signing needs a paid Apple Developer certificate and a Windows
+  code-signing certificate; macOS ad-hoc signs the bundle and Gatekeeper will still warn on
+  first launch. Documented in the README rather than papered over.
+- **An installed build does not read the project's `.env`** — the dev-tree lookup is behind
+  `cfg!(debug_assertions)`, so a packaged app uses its own config directory and writes a
+  blank template there on first run. Correct behaviour (a shipped app has no business reading
+  a source tree) but a real first-install step, so it is called out in the README.
+- Adding `-D warnings` to CI meant actually fixing every clippy lint first, including
+  factoring the price-history tuple into a named `HistoryRow` type.
+
+**Auto-updater — deferred, and why**
+
+`tauri-plugin-updater` needs two things this project does not have: a signing keypair whose
+private half must be kept secret, and somewhere to host a signed update manifest. Both are
+reasonable for a distributed app and disproportionate for a personal one, where
+`git pull && npm run app:build` is the update mechanism. Worth revisiting only if the app is
+ever shared with other people.
 
 ---
 

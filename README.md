@@ -103,6 +103,31 @@ something metadata-shaped breaks:
 cd src-tauri && cargo test --lib live -- --ignored --nocapture
 ```
 
+## Building installers
+
+```bash
+npm run app:build
+```
+
+Produces `src-tauri/target/release/bundle/` — a `.dmg` and `.app` on macOS, `.msi` and an
+NSIS `.exe` on Windows. A universal macOS binary needs
+`npm run tauri -- build --target universal-apple-darwin` and both Rust targets installed.
+
+**Installed builds keep credentials somewhere else.** The dev server reads the `.env` beside
+this README; a packaged app reads one in its own config directory and creates a blank
+template there on first launch:
+
+- macOS — `~/Library/Application Support/com.niklasheneka.gametracker/.env`
+- Windows — `%APPDATA%\com.niklasheneka.gametracker\.env`
+
+Settings → **Show .env** opens exactly that file, wherever the running build looks for it.
+Until it has your IGDB keys, the sidebar shows a *setup* badge.
+
+Builds are **unsigned** — signing needs a paid Apple Developer certificate and a Windows
+code-signing certificate. macOS will refuse an unsigned app on first launch; right-click the
+app and choose Open, or run
+`xattr -dr com.apple.quarantine /Applications/GameTracker.app`.
+
 ## Scripts
 
 | Command | What it does |
