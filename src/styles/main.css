@@ -37,8 +37,12 @@
   /* Extra headroom for the macOS traffic lights; zero where the OS draws its
      own title bar. */
   --titlebar-inset: 0rem;
-  /* Breathing room above the page title, on every platform. */
-  --page-top: calc(0.75rem + var(--titlebar-inset));
+  /* Sidebar only: the traffic lights float above it and must stay clear. */
+  --sidebar-top: calc(0.75rem + var(--titlebar-inset));
+
+  /* The main pane starts to the right of the sidebar, so nothing floats over
+     it and this is purely breathing room — the same on every platform. */
+  --page-top: 1rem;
 }
 
 :root[data-platform="macos"] {

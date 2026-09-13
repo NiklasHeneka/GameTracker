@@ -19,11 +19,11 @@
         "minHeight": 680,
         "resizable": true,
         "fullscreen": false,
-        "center": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "backgroundColor": "#08080c",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "center": true
       }
     ],
     "security": {

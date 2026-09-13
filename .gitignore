@@ -10,3 +10,7 @@ src-tauri/gen/
 
 .DS_Store
 *.log
+
+# Editor workspace
+.idea/
+.vscode/

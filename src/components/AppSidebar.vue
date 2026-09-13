@@ -31,9 +31,8 @@ const linkActive = "bg-elevated !text-ink [&_svg]:text-accent-ink";
     class="chrome flex w-60 shrink-0 flex-col border-r border-line bg-surface/70"
     data-tauri-drag-region
   >
-    <!-- Same inset as the page header, so the brand and the page title sit on
-         the same line. -->
-    <div :style="{ height: 'var(--page-top)' }" data-tauri-drag-region></div>
+    <!-- Clearance for the macOS traffic lights, which float over this column. -->
+    <div :style="{ height: 'var(--sidebar-top)' }" data-tauri-drag-region></div>
 
     <div class="px-5 pb-5" data-tauri-drag-region>
       <div class="flex items-center gap-2.5">
