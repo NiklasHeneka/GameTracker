@@ -3,13 +3,17 @@ name: CI
 on:
   push:
     branches: [main]
+    # Without this a tag push does not start the workflow at all, and the
+    # bundle job's refs/tags/v condition can never be true.
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch makes an in-flight run irrelevant.
+# A newer push to the same branch makes an in-flight run irrelevant. Tag runs
+# have their own group and a release build is never worth cancelling.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   check:
