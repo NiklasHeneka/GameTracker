@@ -15,6 +15,68 @@ where
     Option::deserialize(de).map(Some)
 }
 
+/// How long a game takes, in seconds, as IGDB's players reported it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeToBeat {
+    pub hastily: Option<i64>,
+    pub normally: Option<i64>,
+    pub completely: Option<i64>,
+    /// How many players submitted a time.
+    pub count: i64,
+    /// Whether the numbers are worth printing. See [`TimeToBeat::is_trusted`].
+    pub trusted: bool,
+}
+
+impl TimeToBeat {
+    /// A handful of submissions produces nonsense — Monster Hunter: World has
+    /// four, and reports the completionist run as *shorter* than the normal
+    /// one. So a figure is only shown when enough people agree and the three
+    /// times are in the order they must be.
+    pub fn is_trusted(
+        hastily: Option<i64>,
+        normally: Option<i64>,
+        completely: Option<i64>,
+        count: i64,
+    ) -> bool {
+        const MIN_SUBMISSIONS: i64 = 3;
+
+        let Some(normally) = normally else {
+            return false;
+        };
+        if count < MIN_SUBMISSIONS {
+            return false;
+        }
+        if hastily.is_some_and(|h| h > normally) {
+            return false;
+        }
+        if completely.is_some_and(|c| c < normally) {
+            return false;
+        }
+        true
+    }
+
+    /// `None` when IGDB has no row for the game at all.
+    pub fn new(
+        hastily: Option<i64>,
+        normally: Option<i64>,
+        completely: Option<i64>,
+        count: Option<i64>,
+    ) -> Option<Self> {
+        let count = count?;
+        if count == 0 {
+            return None;
+        }
+        Some(Self {
+            hastily,
+            normally,
+            completely,
+            count,
+            trusted: Self::is_trusted(hastily, normally, completely, count),
+        })
+    }
+}
+
 /// A game as the library grid needs it: enough to draw a card.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +86,10 @@ pub struct GameSummary {
     pub cover_image_id: Option<String>,
     pub first_release: Option<i64>,
     pub steam_appid: Option<i64>,
+    /// IGDB's aggregate score out of 100.
+    pub igdb_rating: Option<f64>,
+    /// `None` until IGDB has been asked, or when it has nothing to say.
+    pub time_to_beat: Option<TimeToBeat>,
     pub genres: Vec<String>,
     pub platforms: Vec<PlatformRef>,
 }
@@ -36,7 +102,6 @@ pub struct GameDetail {
     pub summary: GameSummary,
     pub summary_text: Option<String>,
     pub artwork_image_id: Option<String>,
-    pub igdb_rating: Option<f64>,
     pub developer: Option<String>,
     pub publisher: Option<String>,
 }
@@ -117,6 +182,70 @@ pub const STATUSES: [&str; 4] = ["want", "playing", "finished", "dropped"];
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Seconds, straight from IGDB.
+    const HOUR: i64 = 3600;
+
+    #[test]
+    fn a_well_attested_game_is_trusted() {
+        // Hollow Knight: 17 h / 36 h / 73 h from 31 players.
+        assert!(TimeToBeat::is_trusted(
+            Some(60_102),
+            Some(129_814),
+            Some(263_537),
+            31
+        ));
+    }
+
+    #[test]
+    fn a_completionist_run_shorter_than_the_normal_one_is_not_trusted() {
+        // Monster Hunter: World, from four submissions — IGDB reports the
+        // completionist time as *shorter* than the normal one, which cannot
+        // be true and is why the count alone is not enough.
+        assert!(!TimeToBeat::is_trusted(
+            Some(126_000),
+            Some(711_000),
+            Some(432_000),
+            4
+        ));
+    }
+
+    #[test]
+    fn a_hasty_run_longer_than_the_normal_one_is_not_trusted() {
+        assert!(!TimeToBeat::is_trusted(
+            Some(40 * HOUR),
+            Some(20 * HOUR),
+            Some(60 * HOUR),
+            50
+        ));
+    }
+
+    #[test]
+    fn too_few_submissions_are_not_trusted() {
+        assert!(!TimeToBeat::is_trusted(
+            Some(5 * HOUR),
+            Some(10 * HOUR),
+            Some(20 * HOUR),
+            2
+        ));
+    }
+
+    #[test]
+    fn missing_fields_are_fine_as_long_as_the_normal_time_is_there() {
+        // Plenty of games have no hastily figure at all.
+        assert!(TimeToBeat::is_trusted(None, Some(9 * HOUR), None, 8));
+        // But the normal time is the one shown, so without it there is
+        // nothing to print.
+        assert!(!TimeToBeat::is_trusted(Some(HOUR), None, Some(HOUR), 99));
+    }
+
+    #[test]
+    fn no_submissions_means_no_figure_at_all() {
+        // Stamped as "asked, nothing there" so it is not re-requested.
+        assert!(TimeToBeat::new(None, None, None, Some(0)).is_none());
+        // Never asked.
+        assert!(TimeToBeat::new(None, Some(HOUR), None, None).is_none());
+    }
 
     #[test]
     fn absent_null_and_value_are_three_distinct_states() {

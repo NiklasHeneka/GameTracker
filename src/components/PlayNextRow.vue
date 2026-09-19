@@ -57,6 +57,36 @@ const hours = computed(() => {
   return `${Math.round(h)} h played`;
 });
 
+// ── What it takes, and what people think of it ───────────────────────────
+
+/** IGDB reports seconds; nobody thinks about a backlog in seconds. */
+function toHours(seconds: number) {
+  return Math.round(seconds / 3600);
+}
+
+/**
+ * How long the game takes, when IGDB's players agree enough to say.
+ *
+ * `trusted` is decided in Rust: too few submissions, or a completionist run
+ * somehow shorter than a normal one, and there is no honest figure to print.
+ */
+const playtime = computed(() => {
+  const ttb = game.value.timeToBeat;
+  if (!ttb?.trusted || ttb.normally === null) return null;
+
+  const parts = [`${toHours(ttb.normally)} h to beat`];
+  if (ttb.completely !== null) parts.push(`${toHours(ttb.completely)} h to complete`);
+  return {
+    label: `≈ ${toHours(ttb.normally)} h`,
+    title: `${parts.join(" · ")} — from ${ttb.count} players`,
+  };
+});
+
+const rating = computed(() => {
+  const r = game.value.igdbRating;
+  return r === null ? null : Math.round(r);
+});
+
 // ── Prices, for games not owned yet ──────────────────────────────────────
 
 /** An unset preference means "whichever is cheapest", and that is the order. */
@@ -147,21 +177,48 @@ const lastTime = computed(() => {
           <span>{{ platforms.slice(0, 5).join(" · ") }}</span>
         </p>
 
-        <!-- Never wrap: in a narrow pane a second row of chips pushes the
-             row taller than its own artwork. The mask fades whatever does not
-             fit, so a clipped chip reads as deliberate rather than broken. -->
-        <div
-          v-if="game.genres.length"
-          class="mt-2 flex gap-1.5 overflow-hidden [mask-image:linear-gradient(to_right,black_85%,transparent)]"
-        >
-          <span
-            v-for="genre in game.genres.slice(0, 3)"
-            :key="genre"
-            class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-[10.5px] text-ink-dim"
+        <div class="mt-2 flex items-center gap-3">
+          <!-- Never wrap: in a narrow pane a second row of chips pushes the
+               row taller than its own artwork. The mask fades whatever does
+               not fit, so a clipped chip reads as deliberate, not broken. -->
+          <div
+            v-if="game.genres.length"
+            class="flex min-w-0 gap-1.5 overflow-hidden [mask-image:linear-gradient(to_right,black_85%,transparent)]"
           >
-            {{ genre }}
-          </span>
+            <span
+              v-for="genre in game.genres.slice(0, 3)"
+              :key="genre"
+              class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-[10.5px] text-ink-dim"
+            >
+              {{ genre }}
+            </span>
+          </div>
+
+          <!-- Pinned right, filling the gap the title leaves. These two facts
+               are what actually decide what to play next, so they outrank the
+               genres and never shrink. -->
+          <div
+            v-if="playtime || rating"
+            class="ml-auto flex shrink-0 items-center gap-2.5 text-[11px] text-ink-dim"
+          >
+            <span v-if="playtime" :title="playtime.title" class="tabular-nums">
+              {{ playtime.label }}
+            </span>
+            <span
+              v-if="rating"
+              class="tabular-nums"
+              :title="`IGDB rating ${rating} out of 100`"
+            >
+              ★ {{ rating }}
+            </span>
+          </div>
         </div>
+
+        <!-- Your own note: the drawer asks "why you want it, where you left
+             off", which is exactly what this page is for. -->
+        <p v-if="entry.notes" class="mt-1.5 truncate text-[11px] italic text-ink-faint">
+          {{ entry.notes }}
+        </p>
       </div>
     </button>
 

@@ -28,6 +28,14 @@ pub fn spawn(app: AppHandle) {
                 })
                 .unwrap_or((6, true));
 
+            // Cheap and self-limiting: one request covers 200 games and each
+            // is stamped either way, so this does nothing after the first pass.
+            match crate::services::metadata::backfill_time_to_beat(&state).await {
+                Ok(0) => {}
+                Ok(found) => log::info!("playtimes filled in for {found} games"),
+                Err(e) => log::warn!("could not fetch playtimes: {e}"),
+            }
+
             match refresh_all(&state).await {
                 Ok(report) => {
                     if report.checked > 0 {

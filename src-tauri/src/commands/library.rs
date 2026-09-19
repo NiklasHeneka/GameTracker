@@ -27,6 +27,8 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, LibraryEntry)> {
                 cover_image_id: None,
                 first_release: None,
                 steam_appid: None,
+                igdb_rating: None,
+                time_to_beat: None,
                 genres: Vec::new(),
                 platforms: Vec::new(),
             },
@@ -117,7 +119,7 @@ pub async fn add_entry(
         state.db.with(|conn| metadata::upsert_game(conn, &game))?;
     }
 
-    state.db.with(|conn| {
+    let id: i64 = state.db.with(|conn| {
         let ts = now();
         // New entries sort to the top of their column.
         let top: i64 = conn
@@ -139,11 +141,19 @@ pub async fn add_entry(
             ts
         ])?;
 
-        let id: i64 = conn
+        Ok(conn
             .prepare_cached("SELECT id FROM entry WHERE game_id = ?1")?
-            .query_row([igdb_id], |r| r.get(0))?;
-        read_entry(conn, id)
-    })
+            .query_row([igdb_id], |r| r.get(0))?)
+    })?;
+
+    // Playtime comes from a second IGDB endpoint, and only tracked games are
+    // asked about — so this has to follow the insert. Best-effort: a game with
+    // no figure is still worth adding, and the next refresh pass retries.
+    if let Err(e) = metadata::backfill_time_to_beat(&state).await {
+        log::warn!("could not fetch playtime for game {igdb_id}: {e}");
+    }
+
+    state.db.with(|conn| read_entry(conn, id))
 }
 
 #[tauri::command]

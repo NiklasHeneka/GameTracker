@@ -788,6 +788,36 @@ Notes from the build:
   here, but its sale starts in 18 days" is an answer to "should I wait?", which is the entire
   point of the calendar.
 
+### 5c — filling the middle of the row — ✅ **done**
+
+A full-width row leaves a wide gap between the title and the price. Three facts now sit in it,
+right-aligned against the price column and level with the genre chips: **how long the game
+takes**, **its IGDB rating**, and **your own note** on the line below.
+
+- ✅ Migration 006 adds `ttb_hastily`, `ttb_normally`, `ttb_completely` and `ttb_count` to
+  `game`; `igdb_rating` and the playtime move onto `GameSummary`, where the rows can see them.
+- ✅ `Igdb::time_to_beat` batches 200 game ids per request against IGDB's separate
+  `game_time_to_beats` endpoint, plus a live test guarding it like the others.
+- ✅ Backfilled from the price-refresh loop and after `add_entry`. Filled all 19 tracked games
+  in a single request on the first pass.
+
+Notes from the build:
+
+- **Playtime is already in IGDB.** No HowLongToBeat scrape, no new service, no new credential:
+  `game_time_to_beats` takes the same Twitch token and the same rate limiter, and a probe
+  returned data for all five games tried.
+- **The count field is not decoration.** Monster Hunter: World has four submissions and reports
+  the completionist run (120 h) as *shorter* than the normal one (198 h), which cannot be true.
+  A figure is printed only when at least three players agree **and** hastily ≤ normally ≤
+  completely; the rest stay silent rather than printing a number the app cannot stand behind.
+  Every field is independently optional — plenty of games have a `normally` and no `hastily`.
+- **"Never asked" and "asked, nothing there" have to be different.** `ttb_count` is NULL until
+  the game has been looked up and 0 when IGDB had no row, so the backfill does not re-request
+  the same unknown games on every launch.
+- **Only tracked games are asked about.** Metadata nothing displays is not worth a request.
+- The note line does not change the row height: at four lines the text is still shorter than
+  the banner beside it, so rows with and without notes both measure 115px.
+
 ### Verification
 
 Done for 5a:

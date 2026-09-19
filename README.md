@@ -62,6 +62,12 @@ New rows join the **end**: the top slot means "this is the one", and it should n
 whatever you added last. A game you own shows what you own it on and how long you have played
 instead of a price, since that question is already settled.
 
+Each row also carries the two facts that actually decide what to play next — roughly how long
+the game takes and its IGDB rating — plus your own note from the detail drawer, if you wrote
+one. Playtimes come from IGDB's `game_time_to_beats` endpoint and are only shown when enough
+players agree and their three figures are consistent; a game with four contradictory
+submissions says nothing rather than printing a number the app cannot stand behind.
+
 For anything you do not own yet, the row shows **one store at a time** — its price with any
 discount, and when that store's next storewide sale starts along with what the game cost during
 the last one. Use the store button to switch; the choice is remembered per game, and stores

@@ -50,6 +50,17 @@ export interface PlatformRef {
   family: string;
 }
 
+/** How long a game takes, in **seconds**. Mirrors `db::models::TimeToBeat`. */
+export interface TimeToBeat {
+  hastily: number | null;
+  normally: number | null;
+  completely: number | null;
+  /** How many players submitted a time. */
+  count: number;
+  /** False when too few players agree, or the three times contradict. */
+  trusted: boolean;
+}
+
 /** Enough to draw a card. Mirrors `db::models::GameSummary`. */
 export interface GameSummary {
   igdbId: number;
@@ -57,6 +68,9 @@ export interface GameSummary {
   coverImageId: string | null;
   firstRelease: number | null;
   steamAppid: number | null;
+  /** IGDB's aggregate score out of 100. */
+  igdbRating: number | null;
+  timeToBeat: TimeToBeat | null;
   genres: string[];
   platforms: PlatformRef[];
 }
@@ -65,7 +79,6 @@ export interface GameSummary {
 export interface GameDetail extends GameSummary {
   summaryText: string | null;
   artworkImageId: string | null;
-  igdbRating: number | null;
   developer: string | null;
   publisher: string | null;
 }

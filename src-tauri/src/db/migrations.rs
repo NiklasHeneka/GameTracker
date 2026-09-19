@@ -172,6 +172,18 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_queue_position ON queue (position);
     "#,
+    // ── 006 — how long a game takes ─────────────────────────────────────
+    r#"
+    -- From IGDB's `game_time_to_beats` endpoint, which is separate from the
+    -- games endpoint and so arrives in its own request. Seconds, as IGDB
+    -- reports them; `count` is how many players submitted a time and is the
+    -- only signal of whether the numbers can be trusted.
+    ALTER TABLE game ADD COLUMN ttb_hastily    INTEGER;
+    ALTER TABLE game ADD COLUMN ttb_normally   INTEGER;
+    ALTER TABLE game ADD COLUMN ttb_completely INTEGER;
+    -- NULL means "never looked"; 0 means "looked, IGDB has nothing".
+    ALTER TABLE game ADD COLUMN ttb_count      INTEGER;
+    "#,
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

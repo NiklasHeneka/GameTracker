@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::clients::igdb::IgdbGame;
-use crate::db::models::{GameDetail, GameSummary, PlatformRef};
+use crate::clients::igdb::{IgdbGame, TimeToBeatRow};
+use crate::db::models::{GameDetail, GameSummary, PlatformRef, TimeToBeat};
 use crate::db::now;
 use crate::error::Result;
 
@@ -148,10 +148,71 @@ fn platforms_of(conn: &Connection, game_id: i64) -> Result<Vec<PlatformRef>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
+/// Store one game's playtimes. A game IGDB has no row for is stamped with a
+/// count of 0, so it is not asked about again on every launch.
+pub fn save_time_to_beat(conn: &Connection, rows: &[TimeToBeatRow], asked: &[i64]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare_cached(
+            "UPDATE game SET ttb_hastily = ?2, ttb_normally = ?3, ttb_completely = ?4,
+                             ttb_count = ?5
+             WHERE id = ?1",
+        )?;
+        for row in rows {
+            stmt.execute(params![
+                row.game_id,
+                row.hastily,
+                row.normally,
+                row.completely,
+                row.count,
+            ])?;
+        }
+
+        let answered: std::collections::HashSet<i64> = rows.iter().map(|r| r.game_id).collect();
+        let mut blank =
+            tx.prepare_cached("UPDATE game SET ttb_count = 0 WHERE id = ?1 AND ttb_count IS NULL")?;
+        for id in asked.iter().filter(|id| !answered.contains(id)) {
+            blank.execute([id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Ask IGDB about every tracked game whose playtime has never been looked up.
+///
+/// One request covers 200 games, and a game is stamped either way, so this is
+/// a no-op on every pass after the first. Returns how many had an answer.
+pub async fn backfill_time_to_beat(state: &crate::state::AppState) -> Result<usize> {
+    let ids = state.db.with(games_missing_time_to_beat)?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    let rows = state.igdb()?.time_to_beat(&ids).await?;
+    let found = rows.len();
+    state.db.with(|conn| save_time_to_beat(conn, &rows, &ids))?;
+    Ok(found)
+}
+
+/// Games that have never been asked about. Tracked games only — there is no
+/// point spending requests on metadata nothing displays.
+pub fn games_missing_time_to_beat(conn: &Connection) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT g.id FROM game g
+         JOIN entry e ON e.game_id = g.id
+         WHERE g.ttb_count IS NULL",
+    )?;
+    let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
 pub fn read_summary(conn: &Connection, game_id: i64) -> Result<Option<GameSummary>> {
     let base = conn
         .prepare_cached(
-            "SELECT id, name, cover_image_id, first_release, steam_appid FROM game WHERE id = ?1",
+            "SELECT id, name, cover_image_id, first_release, steam_appid, igdb_rating,
+                    ttb_hastily, ttb_normally, ttb_completely, ttb_count
+             FROM game WHERE id = ?1",
         )?
         .query_row([game_id], |r| {
             Ok((
@@ -160,11 +221,13 @@ pub fn read_summary(conn: &Connection, game_id: i64) -> Result<Option<GameSummar
                 r.get::<_, Option<String>>(2)?,
                 r.get::<_, Option<i64>>(3)?,
                 r.get::<_, Option<i64>>(4)?,
+                r.get::<_, Option<f64>>(5)?,
+                TimeToBeat::new(r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?),
             ))
         })
         .optional()?;
 
-    let Some((id, name, cover, release, appid)) = base else {
+    let Some((id, name, cover, release, appid, rating, ttb)) = base else {
         return Ok(None);
     };
 
@@ -174,6 +237,8 @@ pub fn read_summary(conn: &Connection, game_id: i64) -> Result<Option<GameSummar
         cover_image_id: cover,
         first_release: release,
         steam_appid: appid,
+        igdb_rating: rating,
+        time_to_beat: ttb,
         genres: genres_of(conn, id)?,
         platforms: platforms_of(conn, id)?,
     }))
@@ -184,18 +249,16 @@ pub fn read_detail(conn: &Connection, game_id: i64) -> Result<Option<GameDetail>
         return Ok(None);
     };
 
-    let (summary_text, artwork, rating, developer, publisher) = conn
+    let (summary_text, artwork, developer, publisher) = conn
         .prepare_cached(
-            "SELECT summary, artwork_image_id, igdb_rating, developer, publisher
-             FROM game WHERE id = ?1",
+            "SELECT summary, artwork_image_id, developer, publisher FROM game WHERE id = ?1",
         )?
         .query_row([game_id], |r| {
             Ok((
                 r.get::<_, Option<String>>(0)?,
                 r.get::<_, Option<String>>(1)?,
-                r.get::<_, Option<f64>>(2)?,
+                r.get::<_, Option<String>>(2)?,
                 r.get::<_, Option<String>>(3)?,
-                r.get::<_, Option<String>>(4)?,
             ))
         })?;
 
@@ -203,7 +266,6 @@ pub fn read_detail(conn: &Connection, game_id: i64) -> Result<Option<GameDetail>
         summary,
         summary_text,
         artwork_image_id: artwork,
-        igdb_rating: rating,
         developer,
         publisher,
     }))
@@ -272,6 +334,66 @@ mod tests {
         assert_eq!(platform_family(130, Some(5)), "nintendo");
         assert_eq!(platform_family(169, Some(2)), "xbox");
         assert_eq!(platform_family(29, Some(3)), "other");
+    }
+
+    fn ttb(game_id: i64, normally: Option<i64>, count: i64) -> TimeToBeatRow {
+        TimeToBeatRow {
+            game_id,
+            hastily: None,
+            normally,
+            completely: None,
+            count,
+        }
+    }
+
+    #[test]
+    fn a_game_igdb_knows_nothing_about_is_not_asked_about_twice() {
+        let conn = db();
+        upsert_game(&conn, &hollow_knight()).unwrap();
+        conn.execute(
+            "INSERT INTO entry (game_id, owned, status, priority, added_at, updated_at)
+             VALUES (14593, 0, 'want', 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(games_missing_time_to_beat(&conn).unwrap(), vec![14593]);
+
+        // IGDB answered with nothing for it.
+        save_time_to_beat(&conn, &[], &[14593]).unwrap();
+
+        // Stamped as asked, so the backfill stops retrying it every launch.
+        assert!(games_missing_time_to_beat(&conn).unwrap().is_empty());
+        assert!(read_summary(&conn, 14593)
+            .unwrap()
+            .unwrap()
+            .time_to_beat
+            .is_none());
+    }
+
+    #[test]
+    fn a_playtime_reaches_the_game_summary() {
+        let conn = db();
+        upsert_game(&conn, &hollow_knight()).unwrap();
+        save_time_to_beat(&conn, &[ttb(14593, Some(129_814), 31)], &[14593]).unwrap();
+
+        let found = read_summary(&conn, 14593)
+            .unwrap()
+            .unwrap()
+            .time_to_beat
+            .unwrap();
+        assert_eq!(found.normally, Some(129_814));
+        assert_eq!(found.count, 31);
+        assert!(found.trusted);
+    }
+
+    #[test]
+    fn untracked_games_are_never_asked_about() {
+        let conn = db();
+        upsert_game(&conn, &hollow_knight()).unwrap();
+
+        // No library entry: nothing displays it, so it is not worth a request.
+        assert!(games_missing_time_to_beat(&conn).unwrap().is_empty());
     }
 
     #[test]

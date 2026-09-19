@@ -144,6 +144,18 @@ struct CachedToken {
 
 // ── Client ───────────────────────────────────────────────────────────────
 
+/// One row of `game_time_to_beats`. Times are in seconds.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TimeToBeatRow {
+    pub game_id: i64,
+    pub hastily: Option<i64>,
+    pub normally: Option<i64>,
+    pub completely: Option<i64>,
+    /// How many players submitted a time.
+    #[serde(default)]
+    pub count: i64,
+}
+
 pub struct Igdb {
     http: reqwest::Client,
     client_id: String,
@@ -336,6 +348,31 @@ impl Igdb {
         Ok(out)
     }
 
+    /// How long a game takes, from IGDB's separate `game_time_to_beats`
+    /// endpoint. Batched, and every field is independently optional — plenty
+    /// of games have a `normally` and no `hastily`.
+    pub async fn time_to_beat(&self, ids: &[i64]) -> Result<Vec<TimeToBeatRow>> {
+        let mut out = Vec::new();
+        for chunk in ids.chunks(200) {
+            let list = chunk
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            let mut rows: Vec<TimeToBeatRow> = self
+                .query(
+                    "game_time_to_beats",
+                    format!(
+                        "fields game_id,hastily,normally,completely,count; \
+                         where game_id = ({list}); limit 500;"
+                    ),
+                )
+                .await?;
+            out.append(&mut rows);
+        }
+        Ok(out)
+    }
+
     pub async fn game(&self, igdb_id: i64) -> Result<Option<IgdbGame>> {
         let mut games: Vec<IgdbGame> = self
             .query(
@@ -406,6 +443,34 @@ mod live_tests {
             "search ok — {} results, top: {}",
             games.len(),
             games[0].name
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_time_to_beat_still_answers_in_seconds() {
+        // A separate endpoint from `games`, so it can break on its own.
+        let rows = client().time_to_beat(&[14593, 119133]).await.unwrap();
+        assert_eq!(rows.len(), 2, "game_time_to_beats returned {rows:?}");
+
+        let hk = rows
+            .iter()
+            .find(|r| r.game_id == 14593)
+            .expect("Hollow Knight");
+        let normally = hk.normally.expect("normally missing — renamed?");
+
+        // Seconds, not minutes or hours. Hollow Knight is tens of hours, so a
+        // unit change would show up as an absurd figure rather than an error.
+        assert!(
+            (20 * 3600..200 * 3600).contains(&normally),
+            "normally = {normally}; that is not seconds for a 36-hour game"
+        );
+        assert!(hk.count > 5, "count missing or suspiciously low");
+
+        println!(
+            "time to beat ok — Hollow Knight {:.0} h from {} players",
+            normally as f64 / 3600.0,
+            hk.count
         );
     }
 
