@@ -551,6 +551,236 @@ reasonable for a distributed app and disproportionate for a personal one, where
 `git pull && npm run app:build` is the update mechanism. Worth revisiting only if the app is
 ever shared with other people.
 
+**Phase 5 — "Play Next": the play queue** — 🚧 **5a done, 5b next**
+
+A fifth page, reached from the sidebar, holding one ordered list of what to play next.
+Full-width rows stacked vertically in the shape of a Steam wishlist: wide key art, platforms,
+genres, and on the right either **a price** (for something not owned yet) or **"Owned on …"**
+(for something already bought). Only games already in the library can be queued. Order is set
+by dragging.
+
+A queued game may be unowned, owned-and-unplayed, or finished-and-worth-revisiting after a
+patch, so the queue is deliberately **orthogonal to the board's four buckets**: it answers
+"what next?", not "do I own it?".
+
+*Naming:* the page is **Play Next** and the route is `/play-next`; the table, the commands and
+the store keep the shorter internal noun `queue`. Deliberate, and noted here so a later grep
+for "Play Next" in the Rust is not a surprise.
+
+### Why it needs its own table
+
+`entry.priority` is already the board's ordering. Reusing it would mean reordering the queue
+scrambles the columns and vice versa — the two lists answer different questions and must be
+free to disagree. Migration **005**:
+
+```sql
+CREATE TABLE queue (
+  entry_id       INTEGER PRIMARY KEY REFERENCES entry(id) ON DELETE CASCADE,
+  position       INTEGER NOT NULL,
+  -- Which store's price this row shows. Unused once the game is owned.
+  preferred_shop TEXT,
+  added_at       INTEGER NOT NULL
+);
+CREATE INDEX idx_queue_position ON queue (position);
+```
+
+Two constraints fall out of the schema rather than needing code: `entry_id` as the primary key
+makes a game queueable **at most once**, and `ON DELETE CASCADE` means deleting a game from the
+library removes it from the queue with no dangling rows and no second code path. "Only games
+in my library" is the foreign key, not a validation rule.
+
+### Owned games show ownership, not a price
+
+Once a game is bought, its price and its next sale are noise — the question has been answered.
+So the right-hand block has two modes, switched on `entry.owned`:
+
+| | Right-hand block |
+|---|---|
+| **Not owned** | Store button → dropdown, current price with its discount, and that store's next storewide sale |
+| **Owned** | `Owned · PS5`, plus hours played when known and what it cost when known |
+
+This is a simplification, not an extra branch to maintain. An owned row needs **no**
+`QueueStore` assembly at all, which removes the per-shop work for what will usually be most of
+the list, and it shrinks the refresh change below.
+
+**Where the platform comes from.** `entry.own_platform` — `'PC'` for anything the Steam import
+added, and whatever the drawer's platform select stored otherwise (`abbreviation ?? name`, so
+`PS5`, `Switch`). Games added by hand and marked owned have it **null** until the user sets it,
+so the row must handle that: it shows a plain `Owned` chip with a small inline platform picker
+beside it, offering `entry.game.platforms` with the same option vocabulary the drawer uses.
+Setting it goes through the existing `library.patch(id, { ownPlatform })` — no new command, and
+the two pickers cannot drift apart.
+
+### Backend — `src-tauri/src/commands/queue.rs`
+
+| Command | Notes |
+|---|---|
+| `list_queue() -> Vec<QueueRow>` | **DB only, never the network.** |
+| `enqueue(entry_id) -> QueueRow` | Appends at `MAX(position) + 1`. |
+| `dequeue(entry_id)` | Row only; the library entry is untouched. |
+| `reorder_queue(ids)` | Same shape as `reorder_entries`, one transaction. |
+| `set_queue_shop(entry_id, shop)` | Persists the dropdown choice. |
+| `refresh_queue_prices() -> RefreshReport` | `refresh_one` over *unowned* queued games. |
+
+```rust
+pub struct QueueRow {
+    pub entry: LibraryEntry,       // carries owned, own_platform, genres, platforms
+    pub stores: Vec<QueueStore>,   // always empty when `entry.owned`
+    pub preferred_shop: Option<String>,
+    pub fetched_at: Option<i64>,
+    pub stale: bool,
+}
+
+pub struct QueueStore {
+    pub shop: String,
+    pub platform_family: String,
+    pub offer: Option<PriceRow>,             // None = not sold there
+    pub outlook: Option<StoreSaleOutlook>,   // next sale + what it cost last time
+}
+```
+
+`QueueStore` is the one new idea: it merges the two existing per-shop sources — the current
+offer from `price_snapshot` and the calendar entry from `sale_calendar::outlook` — into the
+single object the dropdown needs. `StoreSaleOutlook.last_event` already carries "was it
+discounted in the previous run of this sale, and for how much", so the answer the user asked
+for is assembled, not invented.
+
+**`list_queue` does no network I/O.** A queue of twenty rows refreshed on every visit would be
+twenty ITAD lookups plus twenty five-year history pulls plus twenty PSN calls — slow, and a
+good way to get rate-limited for nothing. Prices come from the cache with the existing six-hour
+`stale` flag driving a "prices are from *X*, refresh" line in the header, exactly as the drawer
+does today.
+
+**Two changes this forces elsewhere:**
+
+1. `sale_calendar::load()` re-reads and re-parses `sale-calendar.json` on every call, and
+   `outlook()` is called once per game. Twenty rows would parse the file twenty times. → hold
+   the parsed calendar in `AppState` behind a `OnceLock`, and add `outlook_with(&cal, …)` so
+   the loop loads it once. (`load()` keeps its signature for the drawer's single-game path.)
+2. `refresh_all` targets wishlist games only — `owned = 0 AND status = 'want'`. A queued game
+   that is unowned but no longer `want` (dropped, say) would never be priced. → widen the
+   target to wishlist **∪ unowned queued**. Because owned rows show no price at all, this stays
+   a one-line `OR` rather than the whole queue.
+
+`GameSummary` gains `artwork_image_id`: the column already exists on `game` and IGDB already
+fills it, `read_summary` just does not select it. One line of SQL, one struct field.
+
+### Frontend
+
+- `src/views/PlayNextView.vue` — route `/play-next`, third in the sidebar, between Library and
+  Deals.
+- `src/components/PlayNextRow.vue` — the row: grip, rank number, ~320×140 banner
+  (`t_screenshot_med`, falling back to the cover, then the existing gradient placeholder),
+  title + release year, platform and genre chips, bucket chip, then the price-or-owned block.
+- `src/components/StorePicker.vue` — the button-plus-dropdown, rendered only for unowned rows.
+  Lists every store with data, each line showing its price so the choice is informed; greys out
+  stores that do not sell it.
+- `src/components/AddFromLibrary.vue` — a filtered picker over `library.entries` minus what is
+  already queued. `CommandPalette.vue` already does this search; the list rendering is lifted
+  from it.
+- `src/stores/queue.ts` — mirrors `stores/library.ts`, including its optimistic-then-reconcile
+  `patch` pattern.
+- `AppIcon` gains four paths: `list` (nav), `grip`, `chevron`, `x`.
+
+Dragging reuses the SortableJS configuration the board settled on — `forceFallback`,
+`fallbackOnBody`, `v-model` on a **local mutable array**, never a computed. Two differences,
+both forced by the row shape:
+
+- **`:handle=".gt-grip"`.** Rows contain a dropdown, a store link and a remove button;
+  without a handle, mousedown anywhere would start a drag and the dropdown would never open.
+- **Close the dropdown on `@start`.** The fallback drag clones the row into the body; an open
+  dropdown would be cloned with it.
+
+Single-list dragging also means `resolveChange` is not needed: there is no second column to
+race with, so the `moved` event plus the already-mutated array *is* the new order.
+
+### Decisions taken (and how to flip them)
+
+- **Owned rows show ownership instead of a price**, per the user. A bought game's price is a
+  question already answered; hours played is the fact that actually bears on what to play next.
+- **Per-row store, not a page-wide one.** A PS5 game's relevant price is PlayStation's and a
+  PC game's is Steam's; one global selector would be wrong on half the list. Default is the
+  store matching `entry.own_platform` if it sells the game, else the cheapest current offer,
+  else the first with data. A page-wide default would be `preferred_shop` on a setting instead.
+- **New games go to the bottom.** The top slot means "this is what I play next" and should not
+  be taken by whatever was added last. (Note this is the opposite of `add_entry`, which puts
+  new library games at the top of their column — correct there, wrong here.)
+- **Nothing auto-removes.** Finishing a game does not drop it from the queue; the user
+  explicitly wants finished games back on the list after an update. Removal is manual. Buying
+  one *does* silently flip its row from a price to `Owned`, which is the intended payoff.
+- **Backups store the queue by IGDB id, not `entry_id`.** Import re-inserts entries and they
+  get new row ids, so a queue serialised by `entry_id` would restore scrambled or empty. Game
+  ids are stable. `Backup` gains `queue: Vec<QueuedGame { igdb_id, position, preferred_shop }>`
+  and the importer skips ids it did not import.
+
+### Split
+
+### 5a — the list works — ✅ **done**
+
+- ✅ Migration 005: `queue (entry_id PK → entry ON DELETE CASCADE, position, preferred_shop,
+  added_at)`.
+- ✅ `list_queue` / `enqueue` / `dequeue` / `reorder_queue`, with the logic in free functions
+  taking `&Connection` so the tests exercise real SQLite rather than a mocked `State`.
+- ✅ Play Next page: ranked full-width rows, cover banner, platform and genre chips, the
+  owned-versus-wishlist block, add-from-library picker, handle-dragging, remove.
+- ✅ Backup carries the queue by IGDB id.
+- ✅ 8 new unit tests (6 queue, 2 backup); 63 pass, clippy clean with `-D warnings`.
+
+Notes from the build:
+
+- **IGDB `artworks` are as often a logo as a screenshot.** The plan said to use artwork for the
+  wide banner. In practice Elden Ring's artwork is its title logo on white, Tomb Raider's is
+  cropped lettering, The Witcher 3's is the claw mark — three of four rows were unreadable
+  white boxes. The images were not being mis-cropped: they are 16:9 in a 16:9 box, so that is
+  simply what IGDB stores. The row now blurs the game's own **cover** to fill the width and
+  lays the sharp cover on top of it, which every game has and which always matches the game's
+  palette. `artwork_image_id` stays where it was, on `GameDetail` for the drawer hero.
+- **The 420px drawer halves this pane**, and a vertical list cannot scroll sideways out of the
+  problem the way the board's columns do. At that width the title truncated to one letter and
+  the genre chips stacked three rows deep. Fixed with a **container** query rather than a
+  viewport one — the window does not change width when the drawer opens, so a `md:` breakpoint
+  would never fire. Below 46rem the banner and the right-hand block shrink and the chips clip.
+- **vuedraggable ignores a dotted `item-key`.** It does `element[itemKey]`, so `item-key="entry.id"`
+  yields `undefined` for every row. It only affects Vue's keying, not the drag, but the honest
+  spelling is a function.
+- **Verifying the drag needed a stub of Tauri's IPC bridge.** Defining `window.__TAURI_INTERNALS__`
+  lets the real frontend boot in an ordinary browser against fixed data, so the interaction can
+  be driven and the resulting `reorder_queue` payload read back — without touching the live
+  database. Two things that cost time and are worth writing down: SortableJS binds **pointer**
+  events in Chromium (synthetic `MouseEvent`s do nothing), but it binds the **drop** on
+  `mouseup` regardless, so a simulated drag has to fire both or the row reorders visually while
+  the model never updates. The harness was deleted afterwards.
+- **Esc has to be bound to the window, not the search input.** Clicking Add moves focus to a
+  button, after which the footer's "Esc to close" was a lie. (`AddGameModal` has the same
+  binding but keeps focus in its input throughout, so it never showed.)
+
+### 5b — prices on the unowned rows — 📋 **next**
+
+`QueueStore`, the store picker, the calendar cache, the widened refresh target, the stale
+banner. `set_queue_shop` is deliberately not built yet: the column exists, but a command with
+no caller is a command nobody has tested.
+
+### Verification
+
+Done for 5a:
+
+- ✅ Unit: position arithmetic across enqueue/dequeue/reorder, including that the gap a removal
+  leaves cannot collide with the next add; that queueing twice does not move a row; that
+  deleting the library entry takes the queue row with it (the cascade); that a backup restores
+  the order across entries re-inserted with **different** row ids.
+- ✅ Driven in a browser against a stubbed IPC bridge: dragging row 4 to the top reorders the
+  list, renumbers the ranks and sends `reorder_queue → 51, 9, 55, 8`; the picker offers exactly
+  the library minus what is queued; a new row lands at the **end**; remove updates the count;
+  setting the platform inline sends `update_entry {"ownPlatform":"PS5"}` and the row switches
+  from picker to value, which also proves the queue's copy of the entry follows the library.
+- ✅ In the real window: the page loads against the real backend with no error, so the command
+  names and argument mapping are right.
+- Live API tests: none needed — Phase 5 adds no new external API.
+
+Left for 5b: that an owned entry yields no `QueueStore` rows; the default-shop choice (own
+platform wins, then cheapest, then first); that opening the store dropdown mid-list does not
+start a drag.
+
 ---
 
 ## 9. Things to sort out before/while building

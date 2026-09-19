@@ -18,6 +18,9 @@ const PATHS: Record<string, string[]> = {
   key: ["M12.6 11.4a5 5 0 1 0-3.2 3.2L11 16l2 .5.5 2 2-2 2 .5-.5-2 2-2-1.4-1.6Z"],
   plus: ["M12 5v14M5 12h14"],
   search: ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "m21 21-4.3-4.3"],
+  queue: ["M4 6h10M4 12h10M4 18h6", "m16 12 6 3.5-6 3.5Z"],
+  grip: ["M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"],
+  close: ["M18 6 6 18M6 6l12 12"],
 };
 
 const props = withDefaults(defineProps<{ name: keyof typeof PATHS | string; size?: number }>(), {

@@ -3,8 +3,14 @@ import { computed, ref, watch } from "vue";
 import { igdbImage, type IgdbSize } from "@/composables/useIgdbImage";
 
 const props = withDefaults(
-  defineProps<{ imageId: string | null; name: string; size?: IgdbSize }>(),
-  { size: "cover_big" },
+  defineProps<{
+    imageId: string | null;
+    name: string;
+    size?: IgdbSize;
+    /** `contain` shows the whole cover; `cover` fills and crops. */
+    fit?: "cover" | "contain";
+  }>(),
+  { size: "cover_big", fit: "cover" },
 );
 
 const failed = ref(false);
@@ -38,7 +44,8 @@ const initials = computed(() =>
     :alt="`${name} cover art`"
     loading="lazy"
     decoding="async"
-    class="h-full w-full object-cover"
+    class="h-full w-full"
+    :class="fit === 'contain' ? 'object-contain' : 'object-cover'"
     @error="failed = true"
   />
   <!-- No cover on IGDB, or the CDN failed: never show a broken image. -->

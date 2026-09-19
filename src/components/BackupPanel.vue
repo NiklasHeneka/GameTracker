@@ -52,6 +52,7 @@ async function doImport() {
     status.value =
       `Added ${summary.added} of ${summary.entriesInFile}` +
       (summary.skipped ? `, left ${summary.skipped} already-tracked alone` : "") +
+      (summary.queued ? `, restored ${summary.queued} to Play Next` : "") +
       ` (backup from ${shortDate(summary.exportedAt)}).`;
     await library.load();
     await settings.load();

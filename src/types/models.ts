@@ -120,6 +120,18 @@ export interface EntryPatch {
   notes?: string | null;
 }
 
+/**
+ * One row of the Play Next list. Mirrors `commands::queue::QueueRow`.
+ *
+ * Ordering lives in the `queue` table, not in `entry.priority`, so this list
+ * and the board's columns can be arranged independently.
+ */
+export interface QueueRow {
+  entry: LibraryEntry;
+  preferredShop: string | null;
+  addedAt: number;
+}
+
 export interface PriceRow {
   shop: string;
   platformFamily: string;
@@ -295,6 +307,8 @@ export interface ImportSummary {
   added: number;
   /** Already tracked; left exactly as they were. */
   skipped: number;
+  /** Play Next rows restored. */
+  queued: number;
   exportedAt: number;
   settingsApplied: boolean;
 }

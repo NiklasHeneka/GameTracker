@@ -154,6 +154,24 @@ const MIGRATIONS: &[&str] = &[
     -- steam_appid is for PC.
     ALTER TABLE game ADD COLUMN psn_concept_id TEXT;
     "#,
+    // ── 005 — the Play Next queue ───────────────────────────────────────
+    r#"
+    -- An ordered list of what to play next, kept deliberately separate from
+    -- the board. `entry.priority` already orders the four columns; reusing it
+    -- would mean reordering this list scrambles them. The two answer different
+    -- questions and have to be free to disagree.
+    CREATE TABLE queue (
+      -- Primary key, so a game can be queued at most once. ON DELETE CASCADE
+      -- is what enforces "only games in my library": removing the entry takes
+      -- the queue row with it, with no second code path to forget.
+      entry_id       INTEGER PRIMARY KEY REFERENCES entry(id) ON DELETE CASCADE,
+      position       INTEGER NOT NULL,
+      -- Which store's price the row shows. Unused while the game is owned.
+      preferred_shop TEXT,
+      added_at       INTEGER NOT NULL
+    );
+    CREATE INDEX idx_queue_position ON queue (position);
+    "#,
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

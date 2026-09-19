@@ -50,7 +50,7 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, LibraryEntry)> {
     ))
 }
 
-fn read_entry(conn: &Connection, id: i64) -> Result<LibraryEntry> {
+pub fn read_entry(conn: &Connection, id: i64) -> Result<LibraryEntry> {
     let found = conn
         .prepare_cached(&format!("SELECT {COLUMNS} FROM entry WHERE id = ?1"))?
         .query_row([id], hydrate)

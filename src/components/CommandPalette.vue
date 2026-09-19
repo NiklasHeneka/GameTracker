@@ -28,6 +28,12 @@ interface Command {
 
 const commands = computed<Command[]>(() => [
   { id: "nav-library", label: "Library", icon: "library", run: () => router.push("/") },
+  {
+    id: "nav-play-next",
+    label: "Play Next",
+    icon: "queue",
+    run: () => router.push("/play-next"),
+  },
   { id: "nav-deals", label: "Deals", icon: "tag", run: () => router.push("/deals") },
   { id: "nav-stats", label: "Stats", icon: "chart", run: () => router.push("/stats") },
   { id: "nav-settings", label: "Settings", icon: "gear", run: () => router.push("/settings") },

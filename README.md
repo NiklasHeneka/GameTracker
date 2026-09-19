@@ -50,6 +50,18 @@ A one-off override without editing the file:
 IGDB_CLIENT_ID=xxx IGDB_CLIENT_SECRET=yyy npm run app
 ```
 
+## Play Next
+
+A single ordered list of what to play next, separate from the board's four columns. Add
+anything already in your library — owned or not, including a finished game worth another run
+after a big update — and drag the rows by the grip on the left to set the order. The two lists
+keep their own ordering, so arranging one never disturbs the other, and removing a game from
+your library removes it here too.
+
+New rows join the **end**: the top slot means "this is the one", and it should not be taken by
+whatever you added last. A game you own shows what you own it on and how long you have played
+instead of a price, since that question is already settled.
+
 ## Importing from Steam
 
 Settings → Steam library. Enter your SteamID64, your profile name, or paste your profile URL.

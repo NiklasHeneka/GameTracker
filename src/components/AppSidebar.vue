@@ -7,6 +7,7 @@ import { useSettingsStore } from "@/stores/settings";
 
 const NAV = [
   { to: "/", icon: "library", label: "Library" },
+  { to: "/play-next", icon: "queue", label: "Play Next" },
   { to: "/deals", icon: "tag", label: "Deals" },
   { to: "/stats", icon: "chart", label: "Stats" },
 ] as const;
