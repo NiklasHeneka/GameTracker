@@ -120,18 +120,6 @@ export interface EntryPatch {
   notes?: string | null;
 }
 
-/**
- * One row of the Play Next list. Mirrors `commands::queue::QueueRow`.
- *
- * Ordering lives in the `queue` table, not in `entry.priority`, so this list
- * and the board's columns can be arranged independently.
- */
-export interface QueueRow {
-  entry: LibraryEntry;
-  preferredShop: string | null;
-  addedAt: number;
-}
-
 export interface PriceRow {
   shop: string;
   platformFamily: string;
@@ -224,6 +212,34 @@ export interface PriceOverview {
   fetchedAt: number | null;
   stale: boolean;
   note: string | null;
+}
+
+/**
+ * One store's answer for one game: what it costs there now, and when that
+ * store's next storewide sale is. Mirrors `commands::queue::QueueStore`.
+ */
+export interface QueueStore {
+  shop: string;
+  /** `null` when the store carries no listing for this game. */
+  offer: PriceRow | null;
+  outlook: StoreSaleOutlook | null;
+}
+
+/**
+ * One row of the Play Next list. Mirrors `commands::queue::QueueRow`.
+ *
+ * Ordering lives in the `queue` table, not in `entry.priority`, so this list
+ * and the board's columns can be arranged independently.
+ */
+export interface QueueRow {
+  entry: LibraryEntry;
+  /** `null` means "whichever is cheapest" — `stores` is already in that order. */
+  preferredShop: string | null;
+  /** Cheapest offer first. Always empty once the game is owned. */
+  stores: QueueStore[];
+  addedAt: number;
+  fetchedAt: number | null;
+  stale: boolean;
 }
 
 export interface DealRow {

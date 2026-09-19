@@ -62,6 +62,14 @@ New rows join the **end**: the top slot means "this is the one", and it should n
 whatever you added last. A game you own shows what you own it on and how long you have played
 instead of a price, since that question is already settled.
 
+For anything you do not own yet, the row shows **one store at a time** — its price with any
+discount, and when that store's next storewide sale starts along with what the game cost during
+the last one. Use the store button to switch; the choice is remembered per game, and stores
+that do not sell it stay in the list because their next sale is still an answer to "should I
+wait?". Prices are read from the local cache, never fetched on opening the page; **Refresh
+prices** turns amber when something is older than six hours and checks just the unowned games
+on this list rather than your whole wishlist.
+
 ## Importing from Steam
 
 Settings → Steam library. Enter your SteamID64, your profile name, or paste your profile URL.

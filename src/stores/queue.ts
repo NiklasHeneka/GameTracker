@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { dequeue, enqueue, listQueue, reorderQueue } from "@/api/queue";
+import { dequeue, enqueue, listQueue, reorderQueue, setQueueShop } from "@/api/queue";
 import type { LibraryEntry, QueueRow } from "@/types/models";
 
 /**
@@ -76,6 +76,12 @@ export const useQueueStore = defineStore("queue", () => {
     }
   }
 
+  /** Remember which store's price a row shows. */
+  async function setShop(entryId: number, shop: string | null) {
+    const fresh = await setQueueShop(entryId, shop);
+    rows.value = rows.value.map((r) => (r.entry.id === entryId ? fresh : r));
+  }
+
   /**
    * Keep the embedded entries in step with the library store.
    *
@@ -94,5 +100,5 @@ export const useQueueStore = defineStore("queue", () => {
     });
   }
 
-  return { rows, loading, error, queuedIds, load, add, remove, reorder, sync };
+  return { rows, loading, error, queuedIds, load, add, remove, reorder, setShop, sync };
 });

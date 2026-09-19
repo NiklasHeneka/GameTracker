@@ -9,3 +9,7 @@ export const dequeue = (entryId: number) => call<void>("dequeue", { entryId });
 
 /** `entryIds` is the whole list in its new order, front to back. */
 export const reorderQueue = (entryIds: number[]) => call<void>("reorder_queue", { ids: entryIds });
+
+/** `null` goes back to showing whichever store is cheapest. */
+export const setQueueShop = (entryId: number, shop: string | null) =>
+  call<QueueRow>("set_queue_shop", { entryId, shop });

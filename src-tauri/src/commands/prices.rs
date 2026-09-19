@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use tauri::State;
 
 use crate::clients::itad;
@@ -321,22 +321,55 @@ pub async fn refresh_wishlist_prices(state: State<'_, AppState>) -> Result<Refre
     refresh_all(&state).await
 }
 
-/// Refresh every wishlist game and raise alerts for anything that fell below
+/// Prices for the unowned games on the Play Next list.
+#[tauri::command]
+pub async fn refresh_queue_prices(state: State<'_, AppState>) -> Result<RefreshReport> {
+    let targets = state.db.with(queue_targets)?;
+    refresh_targets(&state, targets).await
+}
+
+/// Games worth spending requests on: anything wishlisted, plus anything on
+/// the Play Next list that is not owned yet.
+///
+/// Owned games are excluded on purpose — every source has a request budget,
+/// and it belongs to what the user might still buy. A queued game qualifies
+/// even when it is no longer `want`, because its row shows a price.
+pub fn watch_targets(conn: &Connection) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT game_id FROM entry
+         WHERE owned = 0
+           AND (status = 'want' OR id IN (SELECT entry_id FROM queue))
+         ORDER BY priority",
+    )?;
+    let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+/// Unowned games on the Play Next list — the focused refresh that page offers,
+/// rather than making the user wait on the whole wishlist.
+pub fn queue_targets(conn: &Connection) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT e.game_id FROM queue q
+         JOIN entry e ON e.id = q.entry_id
+         WHERE e.owned = 0
+         ORDER BY q.position",
+    )?;
+    let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+/// Refresh every watched game and raise alerts for anything that fell below
 /// its target price. Shared by the command and the background refresher.
 pub async fn refresh_all(state: &AppState) -> Result<RefreshReport> {
+    let targets = state.db.with(watch_targets)?;
+    refresh_targets(state, targets).await
+}
+
+/// Refresh a specific set of games.
+pub async fn refresh_targets(state: &AppState, targets: Vec<i64>) -> Result<RefreshReport> {
     let (country, notify) = state.db.with(|conn| {
         let s = settings::read(conn)?;
         Ok((s.country, s.notifications_enabled))
-    })?;
-
-    // Wishlist only: owned games do not need watching, and every source has a
-    // request budget worth spending on what the user might still buy.
-    let targets: Vec<i64> = state.db.with(|conn| {
-        let mut stmt = conn.prepare_cached(
-            "SELECT game_id FROM entry WHERE owned = 0 AND status = 'want' ORDER BY priority",
-        )?;
-        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
-        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     })?;
 
     let mut report = RefreshReport {
@@ -544,4 +577,82 @@ pub fn set_manual_price(
             None,
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::migrations;
+
+    fn db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrations::run(&conn).unwrap();
+        conn
+    }
+
+    /// One game and its entry. Returns the entry id.
+    fn entry(conn: &Connection, game_id: i64, owned: bool, status: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO game (id, name, metadata_fetched) VALUES (?1, ?2, 0)",
+            params![game_id, format!("Game {game_id}")],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO entry (game_id, owned, status, priority, added_at, updated_at)
+             VALUES (?1, ?2, ?3, ?1, 0, 0)",
+            params![game_id, owned as i64, status],
+        )
+        .unwrap();
+        conn.query_row("SELECT id FROM entry WHERE game_id = ?1", [game_id], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    }
+
+    fn queue(conn: &Connection, entry_id: i64, position: i64) {
+        conn.execute(
+            "INSERT INTO queue (entry_id, position, added_at) VALUES (?1, ?2, 0)",
+            params![entry_id, position],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_queued_game_is_watched_even_when_it_is_no_longer_wanted() {
+        let conn = db();
+        entry(&conn, 1, false, "want"); // plain wishlist
+        let dropped = entry(&conn, 2, false, "dropped"); // queued, but not "want"
+        queue(&conn, dropped, 0);
+
+        // Without the queue clause this game would never get a price, and its
+        // row would sit blank forever.
+        assert_eq!(watch_targets(&conn).unwrap(), vec![1, 2]);
+    }
+
+    #[test]
+    fn owned_games_are_never_watched_even_when_queued() {
+        let conn = db();
+        let owned = entry(&conn, 1, true, "playing");
+        queue(&conn, owned, 0);
+        entry(&conn, 2, false, "want");
+
+        // Owned rows show ownership instead of a price, so spending requests
+        // on them would buy nothing.
+        assert_eq!(watch_targets(&conn).unwrap(), vec![2]);
+        assert!(queue_targets(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_queue_refresh_follows_the_list_order() {
+        let conn = db();
+        let a = entry(&conn, 1, false, "want");
+        let b = entry(&conn, 2, false, "want");
+        queue(&conn, b, 0);
+        queue(&conn, a, 1);
+
+        // Whatever is at the top of Play Next is what the user is deciding
+        // about, so it gets its price first.
+        assert_eq!(queue_targets(&conn).unwrap(), vec![2, 1]);
+    }
 }

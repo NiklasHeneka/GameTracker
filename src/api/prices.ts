@@ -6,6 +6,9 @@ export const getPrices = (igdbId: number, force = false) =>
 
 export const refreshWishlistPrices = () => call<RefreshReport>("refresh_wishlist_prices");
 
+/** Just the unowned games on Play Next, rather than the whole wishlist. */
+export const refreshQueuePrices = () => call<RefreshReport>("refresh_queue_prices");
+
 export const listActiveDeals = () => call<DealRow[]>("list_active_deals");
 
 export const setManualPrice = (

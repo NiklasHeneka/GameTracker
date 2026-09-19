@@ -3,13 +3,25 @@ import { computed } from "vue";
 
 import AppIcon from "./AppIcon.vue";
 import GameCover from "./GameCover.vue";
+import StorePicker from "./StorePicker.vue";
 import { releaseYear } from "@/composables/useIgdbImage";
 import { bucketOf } from "@/composables/buckets";
+import { money } from "@/composables/useFormat";
 import { useLibraryStore } from "@/stores/library";
 import type { QueueRow } from "@/types/models";
 
-const props = defineProps<{ row: QueueRow; rank: number; selected: boolean }>();
-const emit = defineEmits<{ open: []; remove: [] }>();
+const props = defineProps<{
+  row: QueueRow;
+  rank: number;
+  selected: boolean;
+  pickerOpen: boolean;
+}>();
+const emit = defineEmits<{
+  open: [];
+  remove: [];
+  togglePicker: [];
+  pickShop: [shop: string];
+}>();
 
 const library = useLibraryStore();
 
@@ -43,6 +55,35 @@ const hours = computed(() => {
   const h = entry.value.hoursPlayed;
   if (h === null || h < 1) return null;
   return `${Math.round(h)} h played`;
+});
+
+// ── Prices, for games not owned yet ──────────────────────────────────────
+
+/** An unset preference means "whichever is cheapest", and that is the order. */
+const store = computed(
+  () =>
+    props.row.stores.find((s) => s.shop === props.row.preferredShop) ??
+    props.row.stores[0] ??
+    null,
+);
+
+/** "on now", "in 11 days" — how far off this store's next storewide sale is. */
+const saleTiming = computed(() => {
+  const o = store.value?.outlook;
+  if (!o) return null;
+  if (o.liveNow) return "on now";
+  if (o.daysAway === 0) return "starts today";
+  if (o.daysAway === 1) return "tomorrow";
+  return `in ${o.daysAway} days`;
+});
+
+/** What it cost during the previous run of that same sale. */
+const lastTime = computed(() => {
+  const last = store.value?.outlook?.lastEvent;
+  if (!last) return null;
+  if (!last.hadData) return "no data last time";
+  if (!last.bestCut) return "not discounted last time";
+  return `last time −${last.bestCut}% (${money(last.bestPrice!, last.currency)})`;
 });
 </script>
 
@@ -107,8 +148,12 @@ const hours = computed(() => {
         </p>
 
         <!-- Never wrap: in a narrow pane a second row of chips pushes the
-             row taller than its own artwork. -->
-        <div v-if="game.genres.length" class="mt-2 flex gap-1.5 overflow-hidden">
+             row taller than its own artwork. The mask fades whatever does not
+             fit, so a clipped chip reads as deliberate rather than broken. -->
+        <div
+          v-if="game.genres.length"
+          class="mt-2 flex gap-1.5 overflow-hidden [mask-image:linear-gradient(to_right,black_85%,transparent)]"
+        >
           <span
             v-for="genre in game.genres.slice(0, 3)"
             :key="genre"
@@ -124,7 +169,7 @@ const hours = computed(() => {
          it costs is a question already answered. Phase 5b puts the store
          picker and the price under the "not owned" branch. -->
     <div
-      class="flex w-[190px] shrink-0 flex-col items-end justify-center gap-1 py-2.5 pr-3 @max-[46rem]:w-[116px]"
+      class="flex w-[210px] shrink-0 flex-col items-end justify-center gap-1 py-2.5 pr-3 @max-[46rem]:w-[148px]"
     >
       <template v-if="entry.owned">
         <span class="flex items-center gap-1.5 text-[12.5px] font-medium text-deal">
@@ -160,8 +205,51 @@ const hours = computed(() => {
       </template>
 
       <template v-else>
-        <span class="text-[12.5px] text-ink-dim">{{ bucket.label }}</span>
-        <span class="text-[11px] text-ink-faint">Not owned yet</span>
+        <!-- One store at a time. Five stores' prices and five sale dates on
+             every row would be a wall of numbers nobody reads. -->
+        <StorePicker
+          v-if="store"
+          :stores="row.stores"
+          :selected="store.shop"
+          :open="pickerOpen"
+          @toggle="emit('togglePicker')"
+          @select="emit('pickShop', $event)"
+        />
+        <span v-else class="text-[12.5px] text-ink-dim">{{ bucket.label }}</span>
+
+        <template v-if="store?.offer">
+          <!-- Wraps rather than overflowing: "−80% 9,99 € 1,99 €" is wider
+               than the column once the drawer narrows it. -->
+          <span class="flex max-w-full flex-wrap items-baseline justify-end gap-1.5">
+            <span
+              v-if="store.offer.cut > 0"
+              class="rounded-md bg-deal-soft px-1 py-0.5 text-[10.5px] font-medium text-deal"
+            >
+              −{{ store.offer.cut }}%
+            </span>
+            <span
+              v-if="store.offer.regular && store.offer.cut > 0"
+              class="text-[10.5px] text-ink-faint line-through"
+            >
+              {{ money(store.offer.regular, store.offer.currency) }}
+            </span>
+            <span class="text-[13px] font-medium tabular-nums">
+              {{ money(store.offer.price, store.offer.currency) }}
+            </span>
+          </span>
+          <span v-if="store.offer.isAllTimeLow" class="text-[10.5px] text-deal">
+            all-time low
+          </span>
+        </template>
+        <span v-else-if="store" class="text-[11.5px] text-ink-faint">Not sold here</span>
+        <span v-else class="text-[11px] text-ink-faint">No prices yet</span>
+
+        <span v-if="saleTiming" class="max-w-full truncate text-[11px] text-ink-dim">
+          {{ store!.outlook!.event }} {{ saleTiming }}
+        </span>
+        <span v-if="lastTime" class="max-w-full truncate text-[10.5px] text-ink-faint">
+          {{ lastTime }}
+        </span>
       </template>
     </div>
 

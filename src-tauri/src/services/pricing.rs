@@ -166,7 +166,9 @@ pub fn save_history(
 
 // ── Reading back ─────────────────────────────────────────────────────────
 
-fn read_rows(
+/// Current offers for one game, cheapest first, narrowed to the shops the
+/// user buys from.
+pub fn offers(
     conn: &Connection,
     game_id: i64,
     country: &str,
@@ -251,7 +253,8 @@ fn read_history(conn: &Connection, game_id: i64, country: &str) -> Result<Vec<Hi
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
-fn fetched_at(conn: &Connection, game_id: i64, country: &str) -> Result<Option<i64>> {
+/// When this game's prices were last written, across every shop.
+pub fn fetched_at(conn: &Connection, game_id: i64, country: &str) -> Result<Option<i64>> {
     Ok(conn
         .prepare_cached(
             "SELECT MAX(fetched_at) FROM price_snapshot WHERE game_id = ?1 AND country = ?2",
@@ -315,7 +318,7 @@ pub fn overview(
     config_dir: Option<&std::path::Path>,
     note: Option<String>,
 ) -> Result<PriceOverview> {
-    let mut rows = read_rows(conn, game_id, country, shops)?;
+    let mut rows = offers(conn, game_id, country, shops)?;
     let lows = read_lows(conn, game_id, country)?;
     let history = read_history(conn, game_id, country)?;
 

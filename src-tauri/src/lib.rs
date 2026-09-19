@@ -80,6 +80,8 @@ pub fn run() {
             commands::queue::enqueue,
             commands::queue::dequeue,
             commands::queue::reorder_queue,
+            commands::queue::set_queue_shop,
+            commands::prices::refresh_queue_prices,
             commands::import::preview_steam_import,
             commands::import::import_steam_library,
             commands::stats::get_stats,

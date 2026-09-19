@@ -14,7 +14,7 @@ use crate::error::Result;
 const BUNDLED: &str = include_str!("../../sale-calendar.json");
 
 #[derive(Debug, Deserialize)]
-struct Calendar {
+pub struct Calendar {
     shops: HashMap<String, Vec<Event>>,
 }
 
@@ -51,7 +51,13 @@ fn midday(ts: i64) -> i64 {
     ts - ts.rem_euclid(86_400) + 43_200
 }
 
-fn load(override_dir: Option<&Path>) -> Calendar {
+/// Read the calendar, preferring the user's copy.
+///
+/// Deliberately *not* cached in application state: the whole point of the
+/// override file is that correcting a date takes effect without a restart.
+/// Callers that need it many times over — a page of queued games — load it
+/// once and hand it to [`outlook_with`] instead.
+pub fn load(override_dir: Option<&Path>) -> Calendar {
     if let Some(dir) = override_dir {
         let path = dir.join("sale-calendar.json");
         if path.is_file() {
@@ -132,12 +138,22 @@ pub fn outlook(
     shops: &[String],
     config_dir: Option<&Path>,
 ) -> Result<Vec<StoreSaleOutlook>> {
-    let cal = load(config_dir);
+    outlook_with(&load(config_dir), conn, game_id, country, shops)
+}
+
+/// [`outlook`] against a calendar the caller already holds.
+pub fn outlook_with(
+    cal: &Calendar,
+    conn: &Connection,
+    game_id: i64,
+    country: &str,
+    shops: &[String],
+) -> Result<Vec<StoreSaleOutlook>> {
     let today = now();
     let mut out = Vec::new();
 
     for shop in shops {
-        let events = windows(&cal, shop);
+        let events = windows(cal, shop);
 
         // The next sale that has not finished yet.
         let Some(next) = events.iter().find(|w| w.end >= today) else {

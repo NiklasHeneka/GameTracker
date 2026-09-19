@@ -551,7 +551,7 @@ reasonable for a distributed app and disproportionate for a personal one, where
 `git pull && npm run app:build` is the update mechanism. Worth revisiting only if the app is
 ever shared with other people.
 
-**Phase 5 — "Play Next": the play queue** — 🚧 **5a done, 5b next**
+**Phase 5 — "Play Next": the play queue** — ✅ **done**
 
 A fifth page, reached from the sidebar, holding one ordered list of what to play next.
 Full-width rows stacked vertically in the shape of a Steam wishlist: wide key art, platforms,
@@ -754,11 +754,39 @@ Notes from the build:
   button, after which the footer's "Esc to close" was a lie. (`AddGameModal` has the same
   binding but keeps focus in its input throughout, so it never showed.)
 
-### 5b — prices on the unowned rows — 📋 **next**
+### 5b — prices on the unowned rows — ✅ **done**
 
-`QueueStore`, the store picker, the calendar cache, the widened refresh target, the stale
-banner. `set_queue_shop` is deliberately not built yet: the column exists, but a command with
-no caller is a command nobody has tested.
+- ✅ `QueueStore` merges the current offer with that store's sale outlook; `QueueRow` gains
+  `stores`, `fetchedAt` and `stale`. Owned rows skip the assembly entirely.
+- ✅ `set_queue_shop` remembers the choice; `refresh_queue_prices` refreshes just the unowned
+  queued games, in list order.
+- ✅ `refresh_all` now watches wishlist **∪ unowned queued**, so a queued game that is no
+  longer `want` still gets a price.
+- ✅ Teleported store dropdown showing each store's price, the price with its discount and
+  all-time-low marker, the next storewide sale and what the game cost in the previous run.
+- ✅ 8 more unit tests (71 total), clippy clean with `-D warnings`.
+
+Notes from the build:
+
+- **The calendar is loaded once per page, not cached in `AppState`.** The plan said to hold it
+  behind a `OnceLock`. That would have broken the override file's whole purpose — correcting a
+  date is supposed to take effect without a restart — so `list_queue` loads it once and hands
+  it to `outlook_with`, which gets the same saving (one parse instead of one per row) and
+  changes no semantics.
+- **The dropdown is teleported to the body and positioned by hand.** Rendered in place it is
+  clipped by the scrolling list, and one that only opens downwards is unusable on the last row.
+  It flips above the button near the bottom of the window, and closes on scroll rather than
+  drifting away from it. Teleporting also keeps it out of the row SortableJS clones mid-drag —
+  though the page closes it on `@start` regardless.
+- **The narrow pane bites again.** With the drawer open, `−80% 9,99 € 1,99 €` is wider than the
+  price column and spilled left over the genre chips; the column now wraps and the chips fade
+  out under a mask rather than being sliced mid-word.
+- **"Prices from …" ignores rows that have never been priced.** Letting one unpriced row blank
+  the date was wrong: it is not an old price, it is no price, and the amber refresh button
+  already says something needs fetching.
+- A store that does not sell the game is kept in the picker rather than hidden — "not sold
+  here, but its sale starts in 18 days" is an answer to "should I wait?", which is the entire
+  point of the calendar.
 
 ### Verification
 
@@ -777,9 +805,18 @@ Done for 5a:
   names and argument mapping are right.
 - Live API tests: none needed — Phase 5 adds no new external API.
 
-Left for 5b: that an owned entry yields no `QueueStore` rows; the default-shop choice (own
-platform wins, then cheapest, then first); that opening the store dropdown mid-list does not
-start a drag.
+Done for 5b:
+
+- ✅ Unit: an owned entry yields no `QueueStore` rows and is never `stale`; the cheapest offer
+  sorts first, which is what an unset preference means; a store with no listing still reports
+  its next sale; a never-priced row is stale; the preferred shop round-trips and can be
+  cleared; a queued game that is no longer `want` is watched, while an owned one never is.
+- ✅ Driven against the stubbed bridge: the dropdown lists every store with its price and
+  "not sold" where there is no listing; choosing one sends `set_queue_shop 9 → PlayStation
+  Store` and the row switches to that store's price and sale; choosing a store with no listing
+  shows "Not sold here" beside its upcoming sale; starting a drag closes an open dropdown.
+- ✅ In the real window, against the real database: a queued unowned game renders its cheapest
+  store, price and next sale; a queued owned game still shows ownership.
 
 ---
 
