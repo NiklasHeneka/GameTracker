@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::clients::igdb::{IgdbGame, TimeToBeatRow};
-use crate::db::models::{GameDetail, GameSummary, PlatformRef, TimeToBeat};
+use crate::db::models::{GameDetail, GameSummary, PlatformRef, SteamReview, TimeToBeat};
 use crate::db::now;
 use crate::error::Result;
 
@@ -179,6 +179,72 @@ pub fn save_time_to_beat(conn: &Connection, rows: &[TimeToBeatRow], asked: &[i64
     Ok(())
 }
 
+/// How long a stored review verdict is trusted before being re-checked.
+/// Reviews drift slowly; a month is far more often than anyone notices.
+const REVIEWS_FRESH_FOR: i64 = 30 * 86_400;
+
+/// Store one game's Steam verdict, stamped so it is not re-fetched for a month.
+pub fn save_steam_review(
+    conn: &Connection,
+    game_id: i64,
+    summary: Option<&crate::clients::steam::ReviewSummary>,
+) -> Result<()> {
+    conn.prepare_cached(
+        "UPDATE game SET steam_review_score = ?2, steam_review_desc = ?3,
+                         steam_review_total = ?4, steam_reviews_at = ?5
+         WHERE id = ?1",
+    )?
+    .execute(params![
+        game_id,
+        summary.map(|s| s.review_score),
+        summary.map(|s| s.review_score_desc.clone()),
+        summary.map(|s| s.total_reviews),
+        now(),
+    ])?;
+    Ok(())
+}
+
+/// Tracked games with a Steam listing whose verdict is missing or stale.
+pub fn games_needing_steam_reviews(conn: &Connection) -> Result<Vec<(i64, i64)>> {
+    let cutoff = now() - REVIEWS_FRESH_FOR;
+    let mut stmt = conn.prepare_cached(
+        "SELECT g.id, g.steam_appid FROM game g
+         JOIN entry e ON e.game_id = g.id
+         WHERE g.steam_appid IS NOT NULL
+           AND (g.steam_reviews_at IS NULL OR g.steam_reviews_at < ?1)",
+    )?;
+    let rows = stmt.query_map([cutoff], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+/// Fetch the Steam verdict for every tracked game that needs one.
+///
+/// One request per game — the storefront has no batch form — so this is rate
+/// limited and stamps each game either way, including the ones Steam declines
+/// to summarise. Returns how many were updated.
+pub async fn backfill_steam_reviews(state: &crate::state::AppState) -> Result<usize> {
+    let targets = state.db.with(games_needing_steam_reviews)?;
+    if targets.is_empty() {
+        return Ok(0);
+    }
+
+    let client = state.steam_store.clone();
+    let mut updated = 0;
+    for (game_id, appid) in targets {
+        match client.reviews(appid).await {
+            Ok(summary) => {
+                state
+                    .db
+                    .with(|conn| save_steam_review(conn, game_id, summary.as_ref()))?;
+                updated += 1;
+            }
+            // One unreachable app must not abandon the rest of the list.
+            Err(e) => log::warn!("Steam reviews for appid {appid} failed: {e}"),
+        }
+    }
+    Ok(updated)
+}
+
 /// Ask IGDB about every tracked game whose playtime has never been looked up.
 ///
 /// One request covers 200 games, and a game is stamped either way, so this is
@@ -211,7 +277,8 @@ pub fn read_summary(conn: &Connection, game_id: i64) -> Result<Option<GameSummar
     let base = conn
         .prepare_cached(
             "SELECT id, name, cover_image_id, first_release, steam_appid, igdb_rating,
-                    ttb_hastily, ttb_normally, ttb_completely, ttb_count
+                    ttb_hastily, ttb_normally, ttb_completely, ttb_count,
+                    steam_review_score, steam_review_desc, steam_review_total
              FROM game WHERE id = ?1",
         )?
         .query_row([game_id], |r| {
@@ -223,11 +290,12 @@ pub fn read_summary(conn: &Connection, game_id: i64) -> Result<Option<GameSummar
                 r.get::<_, Option<i64>>(4)?,
                 r.get::<_, Option<f64>>(5)?,
                 TimeToBeat::new(r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?),
+                SteamReview::new(r.get(10)?, r.get(11)?, r.get(12)?),
             ))
         })
         .optional()?;
 
-    let Some((id, name, cover, release, appid, rating, ttb)) = base else {
+    let Some((id, name, cover, release, appid, rating, ttb, review)) = base else {
         return Ok(None);
     };
 
@@ -239,6 +307,7 @@ pub fn read_summary(conn: &Connection, game_id: i64) -> Result<Option<GameSummar
         steam_appid: appid,
         igdb_rating: rating,
         time_to_beat: ttb,
+        steam_review: review,
         genres: genres_of(conn, id)?,
         platforms: platforms_of(conn, id)?,
     }))
@@ -368,6 +437,73 @@ mod tests {
             .unwrap()
             .unwrap()
             .time_to_beat
+            .is_none());
+    }
+
+    #[test]
+    fn steam_reviews_are_refetched_once_they_go_stale() {
+        let conn = db();
+        upsert_game(&conn, &hollow_knight()).unwrap();
+        conn.execute(
+            "INSERT INTO entry (game_id, owned, status, priority, added_at, updated_at)
+             VALUES (14593, 0, 'want', 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(
+            games_needing_steam_reviews(&conn).unwrap(),
+            vec![(14593, 367520)],
+            "a game with a Steam appid and no verdict should be asked about"
+        );
+
+        save_steam_review(
+            &conn,
+            14593,
+            Some(&crate::clients::steam::ReviewSummary {
+                review_score: 9,
+                review_score_desc: "Overwhelmingly Positive".into(),
+                total_reviews: 561_845,
+            }),
+        )
+        .unwrap();
+        assert!(games_needing_steam_reviews(&conn).unwrap().is_empty());
+
+        let found = read_summary(&conn, 14593)
+            .unwrap()
+            .unwrap()
+            .steam_review
+            .unwrap();
+        assert_eq!(found.desc, "Overwhelmingly Positive");
+
+        // A month on, the verdict may have moved; ask again.
+        conn.execute(
+            "UPDATE game SET steam_reviews_at = ?1 WHERE id = 14593",
+            [now() - REVIEWS_FRESH_FOR - 1],
+        )
+        .unwrap();
+        assert_eq!(games_needing_steam_reviews(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_game_steam_will_not_summarise_is_still_stamped() {
+        let conn = db();
+        upsert_game(&conn, &hollow_knight()).unwrap();
+        conn.execute(
+            "INSERT INTO entry (game_id, owned, status, priority, added_at, updated_at)
+             VALUES (14593, 0, 'want', 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+
+        // Steam declined to give a phrase. Stamped anyway, so the backfill
+        // does not ask again tomorrow.
+        save_steam_review(&conn, 14593, None).unwrap();
+        assert!(games_needing_steam_reviews(&conn).unwrap().is_empty());
+        assert!(read_summary(&conn, 14593)
+            .unwrap()
+            .unwrap()
+            .steam_review
             .is_none());
     }
 

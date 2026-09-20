@@ -6,6 +6,8 @@ use crate::error::{AppError, Result};
 use crate::util::rate_limit::RateLimiter;
 
 const API: &str = "https://api.steampowered.com";
+/// The storefront, which is a different host from the Web API and needs no key.
+const STORE: &str = "https://store.steampowered.com";
 
 #[derive(Debug, Deserialize)]
 struct VanityEnvelope {
@@ -41,6 +43,91 @@ pub struct OwnedGame {
     /// Minutes in the last two weeks; absent unless played recently.
     #[serde(default)]
     pub playtime_2weeks: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReviewEnvelope {
+    #[serde(default)]
+    query_summary: ReviewSummary,
+}
+
+/// Steam's aggregate verdict on a game.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ReviewSummary {
+    /// 0 when Steam has too few reviews to call it; 1-9 otherwise.
+    #[serde(default)]
+    pub review_score: i64,
+    /// "Very Positive", "Mixed", … — the phrase the store shows.
+    #[serde(default)]
+    pub review_score_desc: String,
+    #[serde(default)]
+    pub total_reviews: i64,
+}
+
+/// The public storefront endpoints: no key, no account.
+///
+/// Separate from [`Steam`], which wraps the Web API and cannot be built
+/// without a key — review counts should work for someone who never set one up.
+pub struct SteamStore {
+    http: reqwest::Client,
+    limiter: RateLimiter,
+}
+
+impl SteamStore {
+    pub fn new() -> Result<Self> {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(20))
+            .user_agent(crate::clients::user_agent())
+            .gzip(true)
+            .build()
+            .map_err(|e| AppError::Config(format!("could not build HTTP client: {e}")))?;
+        Ok(Self {
+            http,
+            // There is no batch form, so this is one request per game. Steam
+            // tolerates far more, but nothing here is urgent.
+            limiter: RateLimiter::per_second(2),
+        })
+    }
+
+    /// The review verdict for one app, or `None` when Steam has too few
+    /// reviews to summarise — in which case it sends a raw count instead of a
+    /// phrase, which is not what the row wants to show.
+    pub async fn reviews(&self, appid: i64) -> Result<Option<ReviewSummary>> {
+        self.limiter.acquire().await;
+
+        let res = self
+            .http
+            .get(format!("{STORE}/appreviews/{appid}"))
+            .query(&[
+                ("json", "1"),
+                ("language", "all"),
+                ("purchase_type", "all"),
+                // The summary is all we want; asking for zero reviews keeps
+                // the response tiny.
+                ("num_per_page", "0"),
+            ])
+            .send()
+            .await?;
+
+        let status = res.status();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                service: "Steam store",
+                status: status.as_u16(),
+                body: res
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .chars()
+                    .take(200)
+                    .collect(),
+            });
+        }
+
+        let envelope: ReviewEnvelope = res.json().await?;
+        let summary = envelope.query_summary;
+        Ok((summary.review_score > 0 && !summary.review_score_desc.is_empty()).then_some(summary))
+    }
 }
 
 pub struct Steam {
@@ -161,6 +248,38 @@ mod tests {
 
     fn client() -> Steam {
         Steam::new("dummy".into()).unwrap()
+    }
+
+    /// Live — needs the network but no key:
+    ///   cargo test --lib live -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn live_reviews_return_a_phrase_not_a_count() {
+        // Hollow Knight, which has half a million reviews and is not about to
+        // lose its verdict.
+        let summary = SteamStore::new()
+            .unwrap()
+            .reviews(367520)
+            .await
+            .unwrap()
+            .expect("Steam should summarise a game with 500k reviews");
+
+        assert!(
+            (1..=9).contains(&summary.review_score),
+            "review_score = {} — renamed or reshaped?",
+            summary.review_score
+        );
+        assert!(
+            summary.review_score_desc.contains("Positive"),
+            "unexpected verdict: {:?}",
+            summary.review_score_desc
+        );
+        assert!(summary.total_reviews > 100_000, "total_reviews missing");
+
+        println!(
+            "steam reviews ok — {} from {} reviews",
+            summary.review_score_desc, summary.total_reviews
+        );
     }
 
     #[tokio::test]

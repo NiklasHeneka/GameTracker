@@ -36,6 +36,12 @@ pub fn spawn(app: AppHandle) {
                 Err(e) => log::warn!("could not fetch playtimes: {e}"),
             }
 
+            match crate::services::metadata::backfill_steam_reviews(&state).await {
+                Ok(0) => {}
+                Ok(n) => log::info!("Steam review scores updated for {n} games"),
+                Err(e) => log::warn!("could not fetch Steam reviews: {e}"),
+            }
+
             match refresh_all(&state).await {
                 Ok(report) => {
                     if report.checked > 0 {

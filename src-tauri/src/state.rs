@@ -5,6 +5,7 @@ use crate::clients::cheapshark::CheapShark;
 use crate::clients::igdb::Igdb;
 use crate::clients::itad::Itad;
 use crate::clients::ps_store::PsStore;
+use crate::clients::steam::SteamStore;
 use crate::config::Credentials;
 use crate::db::Db;
 use crate::error::{AppError, Result};
@@ -23,6 +24,8 @@ pub struct AppState {
     pub itad: RwLock<Option<Arc<Itad>>>,
     /// Keyless PC prices, always available so the app works before setup.
     pub cheapshark: Arc<CheapShark>,
+    /// Steam's public storefront — review verdicts, no key required.
+    pub steam_store: Arc<SteamStore>,
     /// Built lazily so a rotated query hash can be fixed by editing the file
     /// and reloading, rather than restarting the app.
     pub ps_store: RwLock<Option<Arc<PsStore>>>,

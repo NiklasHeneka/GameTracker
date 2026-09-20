@@ -818,6 +818,20 @@ Notes from the build:
 - The note line does not change the row height: at four lines the text is still shorter than
   the banner beside it, so rows with and without notes both measure 115px.
 
+After a look at it in use, three corrections (migration 007):
+
+- **The fade on the genre chips was always on.** A `mask-image` fades the last slice of the
+  element whether or not anything is overflowing, so "Platform" looked cut off on a row with
+  room to spare. CSS cannot ask "am I overflowing", so the mask is gone: the third chip is
+  hidden outright below 52rem, which reads as a choice where a sliced word reads as a bug.
+- **The facts were too quiet** at 11px `ink-dim`. Now 12.5px with the figures in full `ink`.
+- **Steam's verdict sits beside the score**, taken from the storefront's public
+  `appreviews` endpoint — no key, no account, and every one of the 19 tracked games had one.
+  Steam sends a bare count ("7 user reviews") with `review_score` 0 when it has too few to
+  summarise, so a row only shows a phrase Steam was actually willing to give. Verdicts drift,
+  so unlike the playtimes they carry a timestamp and are re-checked after a month. It is the
+  first of the three to be dropped when the pane narrows: longest, and least precise.
+
 ### Verification
 
 Done for 5a:

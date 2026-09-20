@@ -61,6 +61,15 @@ export interface TimeToBeat {
   trusted: boolean;
 }
 
+/** Steam's aggregate verdict. Mirrors `db::models::SteamReview`. */
+export interface SteamReview {
+  /** 1-9; a row never sees a score Steam declined to summarise. */
+  score: number;
+  /** "Overwhelmingly Positive", "Mixed", … */
+  desc: string;
+  total: number;
+}
+
 /** Enough to draw a card. Mirrors `db::models::GameSummary`. */
 export interface GameSummary {
   igdbId: number;
@@ -71,6 +80,7 @@ export interface GameSummary {
   /** IGDB's aggregate score out of 100. */
   igdbRating: number | null;
   timeToBeat: TimeToBeat | null;
+  steamReview: SteamReview | null;
   genres: string[];
   platforms: PlatformRef[];
 }

@@ -77,6 +77,30 @@ impl TimeToBeat {
     }
 }
 
+/// Steam's aggregate verdict, as the storefront phrases it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SteamReview {
+    /// 1-9. Rows only ever see a score Steam was willing to summarise.
+    pub score: i64,
+    /// "Overwhelmingly Positive", "Mixed", …
+    pub desc: String,
+    pub total: i64,
+}
+
+impl SteamReview {
+    /// `None` unless Steam gave a phrase rather than a bare count.
+    pub fn new(score: Option<i64>, desc: Option<String>, total: Option<i64>) -> Option<Self> {
+        let score = score.filter(|s| *s > 0)?;
+        let desc = desc.filter(|d| !d.is_empty())?;
+        Some(Self {
+            score,
+            desc,
+            total: total.unwrap_or(0),
+        })
+    }
+}
+
 /// A game as the library grid needs it: enough to draw a card.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +114,8 @@ pub struct GameSummary {
     pub igdb_rating: Option<f64>,
     /// `None` until IGDB has been asked, or when it has nothing to say.
     pub time_to_beat: Option<TimeToBeat>,
+    /// `None` for anything with no Steam listing, or too few reviews to judge.
+    pub steam_review: Option<SteamReview>,
     pub genres: Vec<String>,
     pub platforms: Vec<PlatformRef>,
 }
@@ -185,6 +211,24 @@ mod tests {
 
     /// Seconds, straight from IGDB.
     const HOUR: i64 = 3600;
+
+    #[test]
+    fn a_bare_review_count_is_not_a_verdict() {
+        // Steam sends score 0 with a raw count like "7 user reviews" when it
+        // has too few to summarise. That is not a phrase worth showing.
+        assert!(SteamReview::new(Some(0), Some("7 user reviews".into()), Some(7)).is_none());
+        assert!(SteamReview::new(None, None, None).is_none());
+        assert!(SteamReview::new(Some(8), Some(String::new()), Some(100)).is_none());
+
+        let ok = SteamReview::new(
+            Some(9),
+            Some("Overwhelmingly Positive".into()),
+            Some(561_845),
+        )
+        .expect("a real verdict");
+        assert_eq!(ok.desc, "Overwhelmingly Positive");
+        assert_eq!(ok.total, 561_845);
+    }
 
     #[test]
     fn a_well_attested_game_is_trusted() {

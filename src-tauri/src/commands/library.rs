@@ -29,6 +29,7 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, LibraryEntry)> {
                 steam_appid: None,
                 igdb_rating: None,
                 time_to_beat: None,
+                steam_review: None,
                 genres: Vec::new(),
                 platforms: Vec::new(),
             },

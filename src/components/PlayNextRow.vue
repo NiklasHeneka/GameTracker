@@ -87,6 +87,16 @@ const rating = computed(() => {
   return r === null ? null : Math.round(r);
 });
 
+/** Steam's own phrase, verbatim — "Very Positive", "Mixed". */
+const verdict = computed(() => {
+  const review = game.value.steamReview;
+  if (!review) return null;
+  return {
+    label: review.desc,
+    title: `Steam: ${review.desc} — ${review.total.toLocaleString()} reviews`,
+  };
+});
+
 // ── Prices, for games not owned yet ──────────────────────────────────────
 
 /** An unset preference means "whichever is cheapest", and that is the order. */
@@ -178,17 +188,15 @@ const lastTime = computed(() => {
         </p>
 
         <div class="mt-2 flex items-center gap-3">
-          <!-- Never wrap: in a narrow pane a second row of chips pushes the
-               row taller than its own artwork. The mask fades whatever does
-               not fit, so a clipped chip reads as deliberate, not broken. -->
-          <div
-            v-if="game.genres.length"
-            class="flex min-w-0 gap-1.5 overflow-hidden [mask-image:linear-gradient(to_right,black_85%,transparent)]"
-          >
+          <!-- Never wrap, and never cut a chip in half: the third one is
+               dropped outright once the pane is narrow, which reads as a
+               choice where a sliced word reads as a bug. -->
+          <div v-if="game.genres.length" class="flex min-w-0 gap-1.5 overflow-hidden">
             <span
-              v-for="genre in game.genres.slice(0, 3)"
+              v-for="(genre, i) in game.genres.slice(0, 3)"
               :key="genre"
               class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-[10.5px] text-ink-dim"
+              :class="i >= 2 ? '@max-[52rem]:hidden' : ''"
             >
               {{ genre }}
             </span>
@@ -198,18 +206,23 @@ const lastTime = computed(() => {
                are what actually decide what to play next, so they outrank the
                genres and never shrink. -->
           <div
-            v-if="playtime || rating"
-            class="ml-auto flex shrink-0 items-center gap-2.5 text-[11px] text-ink-dim"
+            v-if="playtime || rating || verdict"
+            class="ml-auto flex shrink-0 items-center gap-3 text-[12.5px] text-ink-dim"
           >
-            <span v-if="playtime" :title="playtime.title" class="tabular-nums">
+            <span v-if="playtime" :title="playtime.title" class="tabular-nums text-ink">
               {{ playtime.label }}
             </span>
             <span
               v-if="rating"
-              class="tabular-nums"
+              class="tabular-nums text-ink"
               :title="`IGDB rating ${rating} out of 100`"
             >
               ★ {{ rating }}
+            </span>
+            <!-- Steam's own words. Dropped first when the pane narrows: it is
+                 the longest of the three and the least precise. -->
+            <span v-if="verdict" :title="verdict.title" class="@max-[58rem]:hidden">
+              {{ verdict.label }}
             </span>
           </div>
         </div>

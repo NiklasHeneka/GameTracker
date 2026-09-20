@@ -49,6 +49,7 @@ pub fn run() {
                 igdb: RwLock::new(None),
                 itad: RwLock::new(None),
                 cheapshark: std::sync::Arc::new(clients::cheapshark::CheapShark::new()?),
+                steam_store: std::sync::Arc::new(clients::steam::SteamStore::new()?),
                 ps_store: RwLock::new(None),
                 pending_alerts: std::sync::Mutex::new(Vec::new()),
                 env_path,

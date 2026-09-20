@@ -184,6 +184,17 @@ const MIGRATIONS: &[&str] = &[
     -- NULL means "never looked"; 0 means "looked, IGDB has nothing".
     ALTER TABLE game ADD COLUMN ttb_count      INTEGER;
     "#,
+    // ── 007 — Steam's review verdict ────────────────────────────────────
+    r#"
+    -- From the public storefront endpoint, which needs no key. `desc` is the
+    -- phrase the store shows ("Very Positive"); `score` is 1-9, and 0 means
+    -- Steam has too few reviews to call it.
+    ALTER TABLE game ADD COLUMN steam_review_score INTEGER;
+    ALTER TABLE game ADD COLUMN steam_review_desc  TEXT;
+    ALTER TABLE game ADD COLUMN steam_review_total INTEGER;
+    -- Reviews drift, so this is re-checked rather than fetched once forever.
+    ALTER TABLE game ADD COLUMN steam_reviews_at   INTEGER;
+    "#,
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {
