@@ -33,6 +33,11 @@ export interface ConfigStatus {
   envExists: boolean;
   keys: KeyStatus[];
   ready: boolean;
+  /**
+   * When Sony last refused the PlayStation query hash, if it still is. Prices
+   * keep arriving via the store page, so this is the only sign of a rotation.
+   */
+  psHashRejectedAt: number | null;
 }
 
 /** Shape of every rejected `invoke`, from `error::AppError`. */

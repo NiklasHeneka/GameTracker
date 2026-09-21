@@ -54,6 +54,11 @@ pub struct ConfigStatus {
     pub keys: Vec<KeyStatus>,
     /// True when everything needed for metadata (IGDB) is present.
     pub ready: bool,
+    /// When Sony last refused the PlayStation query hash, if it currently is.
+    /// Prices still arrive through the store-page fallback, so without this
+    /// the rotation would go unnoticed. Filled in by the command, which has
+    /// the database; this module only knows about `.env`.
+    pub ps_hash_rejected_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -198,5 +203,6 @@ pub fn status(env_path: &Path) -> ConfigStatus {
         env_exists: env_path.is_file(),
         keys,
         ready,
+        ps_hash_rejected_at: None,
     }
 }

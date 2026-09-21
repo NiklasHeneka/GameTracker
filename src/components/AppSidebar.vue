@@ -19,6 +19,10 @@ const { config } = storeToRefs(store);
 // them the app cannot fetch a single game.
 const needsSetup = computed(() => config.value !== null && !config.value.ready);
 
+// Softer than "setup": PlayStation prices still work through the store-page
+// fallback, but the query hash wants updating and nothing else would say so.
+const needsAttention = computed(() => !needsSetup.value && !!config.value?.psHashRejectedAt);
+
 // `active-class` matches by prefix, which would keep "/" lit on every route.
 // Every route here is a leaf, so exact matching is what we actually want.
 const link =
@@ -76,6 +80,12 @@ const linkActive = "bg-elevated !text-ink [&_svg]:text-accent-ink";
         >
           setup
         </span>
+        <span
+          v-else-if="needsAttention"
+          class="ml-auto h-1.5 w-1.5 rounded-full bg-sale"
+          title="The PlayStation query hash needs updating"
+          aria-label="The PlayStation query hash needs updating"
+        ></span>
       </RouterLink>
     </div>
   </aside>

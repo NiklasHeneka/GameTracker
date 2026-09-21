@@ -483,6 +483,48 @@ Notes from the build:
 - ✅ Done when: a game on both PC and PS5 shows both prices, and the month's request budget
   is nowhere near exhausted.
 
+**Update, after Phase 5 — a hash-free fallback, and two corrections.**
+
+The original fix procedure for a refused hash was wrong. It said to watch the browser's
+network tab on store.playstation.com and copy the hash from the request. Checked in a real
+browser: loading a concept page sends **no** request to `/api/graphql/v1/op` at all, and
+`metGetPricingDataByConceptId` appears in none of the store's 35 JavaScript files, lazily
+loaded chunks included. The website renders its pages on Sony's servers and computes its own
+hashes at runtime as the sha256 of its query text; this operation belongs to another Sony
+client, most likely the PlayStation App. There was never anything in the browser to copy.
+
+What the page *does* carry is the price. Its embedded data holds every edition's purchase
+buttons (`GameCTA`), each with a price object using exactly the field names the GraphQL query
+returns — so the fallback reuses the same `RawPrice` mapping and cannot drift from it. The
+concept's `defaultProduct` identifies the edition to read, the same one the query returns;
+Elden Ring's page lists four prices and the default is the €59.99 standard edition.
+
+- ✅ **Fallback.** When Sony refuses the hash, the price is read from
+  `store.playstation.com/<locale>/concept/<id>` instead. A live test with a deliberately
+  broken hash still gets Elden Ring at €59.99; another checks that page and query agree on
+  price, cut and currency for Elden Ring and Cyberpunk. It is the fallback rather than the
+  default only because of size: ~700 KB of HTML against a few hundred bytes.
+- ✅ **The warning survives the fallback.** A working fallback would otherwise hide a refused
+  hash indefinitely. The refusal is stamped in the `setting` table, carried on
+  `ConfigStatus.psHashRejectedAt`, shown as a notice in Settings and an amber dot on its
+  sidebar entry, and cleared by the next price that comes through the query.
+- ✅ **Where a new hash comes from**, verified rather than assumed: open-source PlayStation
+  Store libraries publish them — `go-playstation-store` v1.9.0 (October 2023) lists this exact
+  hash. That it is still accepted in September 2026 also means these do not rotate "whenever
+  the storefront is redeployed", as this plan first assumed; this one has held for three years.
+
+Two corrections that fell out of the fixtures:
+
+- **A PS Plus price was being reported as a purchase price.** For a game in the Plus
+  catalogue the query returns `discountedValue: 0, isTiedToSubscription: true`, which became
+  "€0.00, 100% off" — for Cities: Skylines, and enough to fire a target-price alert for someone
+  without Plus. Subscription-tied prices are now ignored on both paths; a game only available
+  through Plus has no PlayStation price, and its stale automatic row is deleted. Manual rows
+  are never touched.
+- **Sale end dates.** The query returned `endTime: null` for Cyberpunk's live 60% sale; the
+  page had it, as epoch *milliseconds in a string*. `end_time_secs` now accepts that alongside
+  ISO dates and plain seconds.
+
 **Phase 3 — reach** — ✅ **done except Nintendo**
 - ✅ **Steam library import.** Resolve a SteamID64 or vanity name (a pasted profile URL works),
   preview the account, choose played / never-launched, then import with playtime.

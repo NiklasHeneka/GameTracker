@@ -4,10 +4,22 @@ use crate::config::{self, ConfigStatus, Credentials};
 use crate::error::{AppError, Result};
 use crate::state::AppState;
 
-/// Which credentials are present — never their values.
+/// Which credentials are present — never their values — plus anything else
+/// the Settings screen needs to warn about.
 #[tauri::command]
 pub fn config_status(state: State<'_, AppState>) -> ConfigStatus {
-    config::status(&state.env_path)
+    with_health(&state, config::status(&state.env_path))
+}
+
+fn with_health(state: &AppState, mut status: ConfigStatus) -> ConfigStatus {
+    status.ps_hash_rejected_at = state
+        .db
+        .with(crate::commands::prices::ps_hash_rejected_at)
+        .unwrap_or_else(|e| {
+            log::warn!("could not read the PlayStation query state: {e}");
+            None
+        });
+    status
 }
 
 /// Re-read `.env` after the user has edited it, so new keys take effect
@@ -28,7 +40,7 @@ pub fn reload_config(state: State<'_, AppState>) -> Result<ConfigStatus> {
     // Without this the new keys sit in state but the clients still hold the old ones.
     state.rebuild_clients();
 
-    Ok(config::status(&state.env_path))
+    Ok(with_health(&state, config::status(&state.env_path)))
 }
 
 /// Show the `.env` in Finder / File Explorer so the user can edit it.

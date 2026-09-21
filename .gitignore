@@ -14,3 +14,9 @@ src-tauri/gen/
 # Editor workspace
 .idea/
 .vscode/
+
+# Local overrides of the bundled data files. The app reads them from next to
+# .env, which during development is the repository root — ignored there only,
+# so the shipped copies under src-tauri/ stay tracked.
+/ps-store-queries.json
+/sale-calendar.json

@@ -96,7 +96,15 @@ async fn refresh_playstation(
     let locale = crate::clients::ps_store::locale_for(country);
     let client = state.ps_store()?;
 
-    match client.price(&concept, &locale).await? {
+    let quote = client.price(&concept, &locale).await?;
+    // Remembered so Settings can say the hash needs updating even though
+    // prices are still arriving — otherwise a working fallback would hide it.
+    state
+        .db
+        .with(|conn| record_ps_query_health(conn, quote.via_page))?;
+    let note = quote.via_page.then(|| PS_PAGE_NOTE.to_string());
+
+    match quote.price {
         Some(found) => {
             state.db.with(|conn| {
                 pricing::upsert_snapshot(
@@ -117,10 +125,50 @@ async fn refresh_playstation(
                     },
                 )
             })?;
-            Ok(None)
+            Ok(note)
         }
-        None => Ok(None),
+        None => {
+            // No purchasable offer: delisted, or now only in the PS Plus
+            // catalogue. Drop the automatic row so a stale price — Cities:
+            // Skylines' old "€0.00, 100% off" — does not linger. A price the
+            // user typed in is left alone.
+            state.db.with(|conn| {
+                conn.prepare_cached(
+                    "DELETE FROM price_snapshot
+                     WHERE game_id = ?1 AND country = ?2 AND shop = 'PlayStation Store'
+                       AND source <> 'manual'",
+                )?
+                .execute(params![game_id, country])?;
+                Ok(())
+            })?;
+            Ok(note)
+        }
     }
+}
+
+const PS_PAGE_NOTE: &str = "PlayStation prices are coming from the store page because Sony \
+    changed the query hash. They are still correct; updating ps-store-queries.json restores \
+    the lighter request.";
+
+/// Setting key holding when the PlayStation query hash was last refused.
+const PS_HASH_REJECTED_AT: &str = "ps_query_hash_rejected_at";
+
+/// Remember whether the persisted query still works. A success clears the
+/// mark, so updating the hash and reloading makes the warning disappear by
+/// itself on the next refresh.
+fn record_ps_query_health(conn: &Connection, via_page: bool) -> Result<()> {
+    if via_page {
+        crate::db::set_setting(conn, PS_HASH_REJECTED_AT, &now().to_string())
+    } else {
+        conn.prepare_cached("DELETE FROM setting WHERE key = ?1")?
+            .execute([PS_HASH_REJECTED_AT])?;
+        Ok(())
+    }
+}
+
+/// When the PlayStation query hash was last refused, if it currently is.
+pub fn ps_hash_rejected_at(conn: &Connection) -> Result<Option<i64>> {
+    Ok(crate::db::get_setting(conn, PS_HASH_REJECTED_AT)?.and_then(|v| v.parse().ok()))
 }
 
 async fn refresh_pc(state: &AppState, game_id: i64, country: &str) -> Result<Option<String>> {
@@ -616,6 +664,26 @@ mod tests {
             params![entry_id, position],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_refused_hash_is_remembered_until_the_query_works_again() {
+        let conn = db();
+        assert_eq!(ps_hash_rejected_at(&conn).unwrap(), None);
+
+        // The fallback answered: the warning must outlive this refresh, or a
+        // working fallback would hide the rotation for good.
+        record_ps_query_health(&conn, true).unwrap();
+        let stamped = ps_hash_rejected_at(&conn).unwrap().expect("stamped");
+        assert!((now() - stamped).abs() < 5);
+
+        // A later refresh on the same broken hash keeps it set.
+        record_ps_query_health(&conn, true).unwrap();
+        assert!(ps_hash_rejected_at(&conn).unwrap().is_some());
+
+        // The user updated the file and reloaded; the query works again.
+        record_ps_query_health(&conn, false).unwrap();
+        assert_eq!(ps_hash_rejected_at(&conn).unwrap(), None);
     }
 
     #[test]

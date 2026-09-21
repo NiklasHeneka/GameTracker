@@ -73,12 +73,20 @@ struct RawPrice {
     discounted_value: Option<i64>,
     #[serde(rename = "currencyCode")]
     currency_code: Option<String>,
-    /// When the current discount ends; null outside a sale.
+    /// When the current discount ends; null outside a sale. The GraphQL query
+    /// has sent ISO dates; the store page sends epoch *milliseconds* as a
+    /// string. Kept loose and normalised by [`end_time_secs`].
     #[serde(rename = "endTime")]
-    end_time: Option<String>,
+    #[serde(default)]
+    end_time: Option<serde_json::Value>,
     #[serde(rename = "isFree")]
     #[serde(default)]
     is_free: bool,
+    /// A price only a PlayStation Plus member gets — often 0, because the game
+    /// is in the Plus catalogue. Not something anyone can simply buy.
+    #[serde(rename = "isTiedToSubscription")]
+    #[serde(default)]
+    is_tied_to_subscription: bool,
 }
 
 /// A PlayStation Store offer for one game.
@@ -91,6 +99,31 @@ pub struct PsPrice {
     /// Unix seconds when the discount ends, if one is running.
     pub expiry: Option<i64>,
     pub url: String,
+}
+
+/// A price lookup, and how it was answered.
+#[derive(Debug, Clone)]
+pub struct PsQuote {
+    pub price: Option<PsPrice>,
+    /// Sony refused the persisted query's hash, so this came from the store
+    /// page instead. Prices keep flowing, but each lookup now downloads a whole
+    /// page rather than a few hundred bytes — the hash wants updating.
+    pub via_page: bool,
+}
+
+/// What the persisted query came back with.
+enum Queried {
+    Price(Option<PsPrice>),
+    /// The hash is no longer whitelisted — Sony has changed the query.
+    HashRejected,
+}
+
+fn hash_rejected_error() -> AppError {
+    AppError::Config(
+        "PlayStation prices need an updated query hash — Sony has changed it, and reading \
+         the store page instead did not work either. See ps-store-queries.json."
+            .into(),
+    )
 }
 
 /// Map an ISO country to the `language-COUNTRY` locale the store expects.
@@ -137,7 +170,64 @@ impl PsStore {
 
     /// Current price for a concept id, in the region implied by `locale`
     /// (e.g. `de-DE`).
-    pub async fn price(&self, concept_id: &str, locale: &str) -> Result<Option<PsPrice>> {
+    ///
+    /// Asks the GraphQL endpoint first — a few hundred bytes. If Sony has
+    /// rotated the persisted query's hash, reads the same price out of the
+    /// store page, which needs no hash at all, and says so in the result so
+    /// the caller can tell the user. Only when both fail is it an error.
+    pub async fn price(&self, concept_id: &str, locale: &str) -> Result<PsQuote> {
+        match self.query(concept_id, locale).await? {
+            Queried::Price(price) => Ok(PsQuote {
+                price,
+                via_page: false,
+            }),
+            Queried::HashRejected => {
+                log::warn!(
+                    "PlayStation query hash rejected; reading concept {concept_id} from the store page"
+                );
+                match self.price_from_page(concept_id, locale).await {
+                    Ok(price) => Ok(PsQuote {
+                        price,
+                        via_page: true,
+                    }),
+                    Err(e) => {
+                        log::warn!("the store page fallback failed too: {e}");
+                        Err(hash_rejected_error())
+                    }
+                }
+            }
+        }
+    }
+
+    /// The same price, read from `store.playstation.com/{locale}/concept/{id}`.
+    ///
+    /// The page is server-rendered: its embedded data carries each edition's
+    /// price under exactly the field names the GraphQL query uses, and no
+    /// persisted-query hash is involved. The cost is size — the page is roughly
+    /// 700 KB against a few hundred bytes — which is why it is the fallback and
+    /// not the first choice.
+    pub async fn price_from_page(&self, concept_id: &str, locale: &str) -> Result<Option<PsPrice>> {
+        self.limiter.acquire().await;
+
+        let url = format!(
+            "https://store.playstation.com/{}/concept/{concept_id}",
+            locale.to_lowercase()
+        );
+        let res = self.http.get(&url).send().await?;
+        let status = res.status();
+        let body = res.text().await?;
+        if !status.is_success() {
+            return Err(AppError::Api {
+                service: "PlayStation Store page",
+                status: status.as_u16(),
+                body: body.chars().take(200).collect(),
+            });
+        }
+        parse_page(&body, concept_id, locale)
+    }
+
+    /// The persisted GraphQL query.
+    async fn query(&self, concept_id: &str, locale: &str) -> Result<Queried> {
         let op = self
             .queries
             .operations
@@ -176,13 +266,9 @@ impl PsStore {
         let body = res.text().await?;
 
         if !status.is_success() {
-            // A rotated hash is the most likely failure and has a specific fix.
+            // A rotated hash is the most likely failure, and has a fallback.
             if body.contains("not whitelisted") {
-                return Err(AppError::Config(
-                    "PlayStation price lookups need updated query hashes — Sony has rotated \
-                     them. Edit ps-store-queries.json (see the notes in that file)."
-                        .into(),
-                ));
+                return Ok(Queried::HashRejected);
             }
             return Err(AppError::Api {
                 service: "PlayStation Store",
@@ -194,11 +280,7 @@ impl PsStore {
         let envelope: Envelope = serde_json::from_str(&body)?;
         if let Some(err) = envelope.errors.first() {
             if err.message.contains("not whitelisted") {
-                return Err(AppError::Config(
-                    "PlayStation price lookups need updated query hashes — Sony has rotated \
-                     them. Edit ps-store-queries.json (see the notes in that file)."
-                        .into(),
-                ));
+                return Ok(Queried::HashRejected);
             }
             return Err(AppError::Api {
                 service: "PlayStation Store",
@@ -212,15 +294,132 @@ impl PsStore {
             .and_then(|d| d.concept)
             .and_then(|c| c.default_product)
         else {
-            return Ok(None);
+            return Ok(Queried::Price(None));
         };
 
         let Some(raw) = product.price else {
-            return Ok(None);
+            return Ok(Queried::Price(None));
         };
 
-        Ok(to_price(&raw, concept_id, locale, product.id.as_deref()))
+        Ok(Queried::Price(to_price(
+            &raw,
+            concept_id,
+            locale,
+            product.id.as_deref(),
+        )))
     }
+}
+
+// ── The store page ───────────────────────────────────────────────────────
+
+/// Every `<script id="…" type="application/json">` body on a page, with its id.
+///
+/// Plain string search rather than an HTML parser or a regex dependency: the
+/// page is machine-generated, and these tags are the only structure read.
+fn json_scripts(html: &str) -> Vec<(&str, &str)> {
+    const OPEN: &str = "<script id=\"";
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(at) = rest.find(OPEN) {
+        let after = &rest[at + OPEN.len()..];
+        let Some(id_end) = after.find('"') else { break };
+        let id = &after[..id_end];
+        let tail = &after[id_end..];
+        let Some(tag_end) = tail.find('>') else { break };
+        let body_and_rest = &tail[tag_end + 1..];
+        let Some(body_end) = body_and_rest.find("</script>") else {
+            break;
+        };
+        if tail[..tag_end].contains("application/json") {
+            out.push((id, &body_and_rest[..body_end]));
+        }
+        rest = &body_and_rest[body_end..];
+    }
+    out
+}
+
+fn page_changed(what: &str) -> AppError {
+    AppError::Api {
+        service: "PlayStation Store page",
+        status: 200,
+        body: format!("the page no longer looks as expected: {what}"),
+    }
+}
+
+/// The price of a concept's **default edition**, read from its store page.
+///
+/// A concept page lists every edition and add-on — Elden Ring's shows four
+/// prices — so the default product has to be identified first, exactly as the
+/// GraphQL query does. Its purchase buttons (`GameCTA`) carry the prices, keyed
+/// by SKU, which is the product id plus a suffix.
+///
+/// PlayStation Plus prices are skipped: a game in the Plus catalogue has a
+/// button priced at 0 that only members can use. A regular purchase button is
+/// preferred; with none left, there is no price, which is the honest answer.
+fn parse_page(html: &str, concept_id: &str, locale: &str) -> Result<Option<PsPrice>> {
+    let scripts = json_scripts(html);
+
+    let (_, next_data) = scripts
+        .iter()
+        .find(|(id, _)| *id == "__NEXT_DATA__")
+        .ok_or_else(|| page_changed("no __NEXT_DATA__ block"))?;
+    let data: serde_json::Value = serde_json::from_str(next_data)?;
+    let apollo = data["props"]["apolloState"]
+        .as_object()
+        .ok_or_else(|| page_changed("no apolloState"))?;
+
+    let concept_prefix = format!("Concept:{concept_id}:");
+    let Some(default_ref) = apollo
+        .iter()
+        .find(|(key, _)| key.starts_with(&concept_prefix))
+        .and_then(|(_, concept)| concept["defaultProduct"]["__ref"].as_str())
+    else {
+        // No default product — an unreleased or delisted game. Not an error.
+        return Ok(None);
+    };
+    // `Product:EP0700-PPSA04609_00-ELDENRING0000000:de-de`
+    let product_id = default_ref
+        .split(':')
+        .nth(1)
+        .ok_or_else(|| page_changed("unexpected product reference"))?;
+
+    // The trailing dash matters: without it, "…ELDENRING0000000" would also
+    // match "…ELDENRING0000000X", a different product.
+    let needle = format!(":{product_id}-");
+    let mut candidates: Vec<(bool, RawPrice)> = Vec::new();
+
+    for (_, body) in &scripts {
+        if !body.contains("GameCTA") {
+            continue;
+        }
+        let Ok(block) = serde_json::from_str::<serde_json::Value>(body) else {
+            continue;
+        };
+        let Some(cache) = block["cache"].as_object() else {
+            continue;
+        };
+        for (key, entry) in cache {
+            if !key.starts_with("GameCTA:") || !key.contains(&needle) {
+                continue;
+            }
+            let Ok(raw) = serde_json::from_value::<RawPrice>(entry["price"].clone()) else {
+                continue;
+            };
+            if raw.is_tied_to_subscription {
+                continue;
+            }
+            if raw.base_price_value.is_none() && !raw.is_free {
+                continue;
+            }
+            candidates.push((key.ends_with(":OUTRIGHT"), raw));
+        }
+    }
+
+    // A plain purchase first; any other non-subscription button after it.
+    candidates.sort_by_key(|(outright, _)| !outright);
+    Ok(candidates
+        .first()
+        .and_then(|(_, raw)| to_price(raw, concept_id, locale, Some(product_id))))
 }
 
 fn to_price(
@@ -229,6 +428,12 @@ fn to_price(
     locale: &str,
     _product: Option<&str>,
 ) -> Option<PsPrice> {
+    // A Plus catalogue price is not a price anyone can simply pay. Reporting
+    // it made Cities: Skylines look "100% off, €0.00" to everyone.
+    if raw.is_tied_to_subscription {
+        return None;
+    }
+
     // A giveaway can arrive with no base price at all; treat it as zero rather
     // than dropping the offer.
     let base = match raw.base_price_value {
@@ -256,8 +461,29 @@ fn to_price(
         regular: (cut > 0).then(|| base as f64 / 100.0),
         cut,
         currency: raw.currency_code.clone().unwrap_or_else(|| "EUR".into()),
-        expiry: raw.end_time.as_deref().and_then(parse_ps_time),
+        expiry: raw.end_time.as_ref().and_then(end_time_secs),
         url: format!("https://store.playstation.com/{path_locale}/concept/{concept_id}"),
+    })
+}
+
+/// A sale's end time as unix seconds, from whichever shape it arrived in.
+///
+/// The store page sends epoch milliseconds as a string (`"1790204340000"`);
+/// ISO dates are handled too. Anything past 10^10 is taken as milliseconds —
+/// in seconds that would be the year 2286.
+fn end_time_secs(value: &serde_json::Value) -> Option<i64> {
+    let number = match value {
+        serde_json::Value::Number(n) => n.as_i64(),
+        serde_json::Value::String(s) if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => {
+            s.parse().ok()
+        }
+        serde_json::Value::String(s) => return parse_ps_time(s),
+        _ => None,
+    }?;
+    Some(if number > 10_000_000_000 {
+        number / 1000
+    } else {
+        number
     })
 }
 
@@ -306,9 +532,123 @@ mod tests {
             base_price_value: base,
             discounted_value: discounted,
             currency_code: Some("EUR".into()),
-            end_time: end.map(|s| s.to_string()),
+            end_time: end.map(|s| serde_json::Value::String(s.to_string())),
             is_free: free,
+            is_tied_to_subscription: false,
         }
+    }
+
+    const ELDEN_RING: &str = include_str!("fixtures/ps_concept_elden_ring.html");
+    const CYBERPUNK: &str = include_str!("fixtures/ps_concept_cyberpunk.html");
+    const CITIES: &str = include_str!("fixtures/ps_concept_cities.html");
+
+    #[test]
+    fn the_page_yields_the_default_edition_not_the_deluxe_one() {
+        // Four prices on the page: €59.99 standard, €79.99 with the
+        // expansion, €99.99 deluxe, €49.99 for the expansion alone. The
+        // GraphQL query returns the standard one, so the fallback must too.
+        let p = parse_page(ELDEN_RING, "10000333", "de-DE")
+            .unwrap()
+            .expect("Elden Ring has a price");
+        assert!((p.price - 59.99).abs() < 1e-9, "picked {}", p.price);
+        assert_eq!(p.cut, 0);
+        assert_eq!(p.currency, "EUR");
+        assert!(p.url.ends_with("/de-de/concept/10000333"));
+    }
+
+    #[test]
+    fn the_page_yields_a_discount_and_its_end_date() {
+        // Cyberpunk at 60% off, captured live. The page's `endTime` is epoch
+        // milliseconds in a string — and it is the one source that has the
+        // date at all: the GraphQL query returned null for this same sale.
+        let p = parse_page(CYBERPUNK, "234567", "de-DE")
+            .unwrap()
+            .expect("Cyberpunk has a price");
+        assert!((p.price - 19.99).abs() < 1e-9, "picked {}", p.price);
+        assert_eq!(p.regular, Some(49.99));
+        assert_eq!(p.cut, 60);
+        // 1790204340000 ms = 2026-09-23T22:59:00Z.
+        assert_eq!(
+            p.expiry,
+            crate::clients::itad::parse_timestamp("2026-09-23T22:59:00Z")
+        );
+    }
+
+    #[test]
+    fn the_page_skips_ps_plus_prices_and_an_add_on_that_shares_the_page() {
+        // Cyberpunk's page also carries a PS Plus button priced at 0 for the
+        // same edition, and Phantom Liberty at €34.99. Neither is the answer.
+        let p = parse_page(CYBERPUNK, "234567", "de-DE").unwrap().unwrap();
+        assert_ne!(
+            p.price, 0.0,
+            "a PS Plus catalogue price is not a purchase price"
+        );
+        assert!((p.price - 34.99).abs() > 1e-9, "picked the add-on");
+    }
+
+    #[test]
+    fn a_game_only_in_ps_plus_has_no_price_rather_than_a_free_one() {
+        // Cities: Skylines' default edition is in the Plus catalogue and has
+        // no ordinary purchase button. The honest answer is "no price" — not
+        // the "€0.00, 100% off" the app used to show everyone.
+        assert!(parse_page(CITIES, "224821", "de-DE").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_ps_plus_price_from_the_query_is_not_a_purchase_price() {
+        // Exactly what GraphQL returned for Cities: Skylines.
+        let mut plus = raw(Some(3999), Some(0), None, true);
+        plus.is_tied_to_subscription = true;
+        assert!(to_price(&plus, "224821", "de-DE", None).is_none());
+    }
+
+    #[test]
+    fn a_page_without_its_data_is_a_clear_error_not_a_missing_price() {
+        let err = parse_page("<html><body>maintenance</body></html>", "1", "de-DE").unwrap_err();
+        assert!(
+            err.to_string().contains("__NEXT_DATA__"),
+            "unhelpful: {err}"
+        );
+    }
+
+    #[test]
+    fn end_times_arrive_in_more_than_one_shape() {
+        use serde_json::json;
+        let expected = crate::clients::itad::parse_timestamp("2026-09-23T22:59:00Z");
+        assert_eq!(
+            end_time_secs(&json!("1790204340000")),
+            expected,
+            "ms in a string"
+        );
+        assert_eq!(
+            end_time_secs(&json!(1790204340000_i64)),
+            expected,
+            "ms as a number"
+        );
+        assert_eq!(end_time_secs(&json!(1790204340)), expected, "seconds");
+        assert_eq!(
+            end_time_secs(&json!("2026-09-23T22:59:00Z")),
+            expected,
+            "ISO"
+        );
+        assert_eq!(end_time_secs(&json!(null)), None);
+        assert_eq!(end_time_secs(&json!("")), None);
+    }
+
+    #[test]
+    fn only_json_script_blocks_are_read() {
+        let html = r#"<script id="a" type="application/json">{"x":1}</script>
+                      <script id="b" src="app.js"></script>
+                      <script id="c" type="application/json">{"y":2}</script>"#;
+        let found = json_scripts(html);
+        assert_eq!(found, vec![("a", r#"{"x":1}"#), ("c", r#"{"y":2}"#)]);
+    }
+
+    #[test]
+    fn when_both_paths_fail_the_message_points_at_the_file() {
+        assert!(hash_rejected_error()
+            .to_string()
+            .contains("ps-store-queries.json"));
     }
 
     #[test]
@@ -407,11 +747,16 @@ mod live_tests {
     #[ignore]
     async fn live_ps_price_for_elden_ring() {
         let store = PsStore::new(None).unwrap();
-        let price = store
+        let quote = store
             .price("10000333", "de-DE")
             .await
-            .expect("the request itself must succeed")
-            .expect("Elden Ring has a PlayStation listing");
+            .expect("the request itself must succeed");
+        assert!(
+            !quote.via_page,
+            "the bundled hash has been rotated — prices still work via the store page, \
+             but ps-store-queries.json needs a new hash"
+        );
+        let price = quote.price.expect("Elden Ring has a PlayStation listing");
 
         assert_eq!(price.currency, "EUR", "locale override did not apply");
         assert!(
@@ -428,9 +773,9 @@ mod live_tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_ps_rotated_hash_produces_an_actionable_message() {
-        // A deliberately wrong hash must surface as "edit the file", not a
-        // generic HTTP error.
+    async fn live_ps_rotated_hash_falls_back_to_the_store_page() {
+        // A deliberately wrong hash: Sony refuses it exactly as it would a
+        // rotated one. The price must still arrive, flagged as page-sourced.
         let mut store = PsStore::new(None).unwrap();
         store.queries.operations.insert(
             "pricingByConceptId".into(),
@@ -439,9 +784,41 @@ mod live_tests {
                 sha256_hash: "0".repeat(64),
             },
         );
-        let err = store.price("10000333", "de-DE").await.unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("ps-store-queries.json"), "unhelpful: {msg}");
-        println!("rotated hash -> {msg}");
+        let quote = store.price("10000333", "de-DE").await.unwrap();
+        assert!(
+            quote.via_page,
+            "a refused hash must be reported, not hidden"
+        );
+        let price = quote
+            .price
+            .expect("the store page still has Elden Ring's price");
+        println!(
+            "rotated hash -> {:.2} {} via the store page",
+            price.price, price.currency
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_ps_store_page_agrees_with_the_query() {
+        // The fallback is only worth having if it gives the same answer.
+        let store = PsStore::new(None).unwrap();
+        for concept in ["10000333", "234567"] {
+            let query = store.price(concept, "de-DE").await.unwrap().price;
+            let page = store.price_from_page(concept, "de-DE").await.unwrap();
+            let (q, p) = (query.expect("query price"), page.expect("page price"));
+            assert!(
+                (q.price - p.price).abs() < 1e-9 && q.cut == p.cut && q.currency == p.currency,
+                "concept {concept}: query {:.2} -{}% vs page {:.2} -{}%",
+                q.price,
+                q.cut,
+                p.price,
+                p.cut
+            );
+            println!(
+                "concept {concept}: {:.2} {} -{}% both ways; page expiry {:?}, query expiry {:?}",
+                p.price, p.currency, p.cut, p.expiry, q.expiry
+            );
+        }
     }
 }

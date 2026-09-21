@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader.vue";
 import AppIcon from "@/components/AppIcon.vue";
 import SteamImport from "@/components/SteamImport.vue";
 import BackupPanel from "@/components/BackupPanel.vue";
+import { shortDate } from "@/composables/useFormat";
 import { useSettingsStore } from "@/stores/settings";
 
 const store = useSettingsStore();
@@ -292,6 +293,27 @@ async function reveal() {
                 "
               />
             </label>
+
+            <!-- Prices keep arriving through the store-page fallback, so without
+                 this a rotated hash would go unnoticed indefinitely. -->
+            <div v-if="config.psHashRejectedAt" class="flex gap-3 bg-sale/[0.07] px-4 py-3">
+              <AppIcon name="alert" :size="16" class="mt-0.5 shrink-0 text-sale" />
+              <div class="min-w-0 text-[12px] leading-relaxed text-ink-dim">
+                <p class="font-medium text-ink">PlayStation query hash needs updating</p>
+                <p class="mt-1">
+                  Sony stopped accepting it on {{ shortDate(config.psHashRejectedAt) }}.
+                  Prices are still correct — they are read from the store page instead —
+                  but each lookup now downloads a whole page rather than a small answer.
+                </p>
+                <p class="mt-1">
+                  Put an updated <code class="font-mono text-[11px]">ps-store-queries.json</code>
+                  next to your <code class="font-mono text-[11px]">.env</code> (the notes
+                  inside the file explain where a new hash comes from), then
+                  <strong class="font-medium text-ink">Reload keys</strong>. This notice
+                  clears itself after the next successful refresh.
+                </p>
+              </div>
+            </div>
 
           </div>
         </section>

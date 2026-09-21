@@ -90,13 +90,28 @@ you typed yourself.
 ## PlayStation prices
 
 PlayStation prices come from the PS Store's own GraphQL endpoint. It needs no account, but it
-accepts **only persisted queries whose hash Sony has whitelisted**, and those rotate whenever
-the storefront is redeployed. The hashes therefore live in `src-tauri/ps-store-queries.json`
-rather than in the binary — copy it next to your `.env` to override it.
+accepts **only persisted queries whose hash Sony has whitelisted**. Sony changes a hash when it
+changes the query behind it — rarely: the one the app uses was published in October 2023 and is
+still accepted. The hash lives in `src-tauri/ps-store-queries.json` rather than in the binary.
 
-If PlayStation prices stop working, the app will say so in as many words. To fix it: open
-store.playstation.com, watch the network tab for a request to `/api/graphql/v1/op`, and copy
-the `sha256Hash` from its `extensions` parameter into the file.
+**If Sony refuses the hash, PlayStation prices keep working.** The app reads the same price
+from the store page (`store.playstation.com/<locale>/concept/<id>`), which needs no hash, and
+Settings shows a notice with an amber dot on its sidebar entry. The page is a much bigger
+download (~700 KB against a few hundred bytes), which is why it is the fallback rather than the
+first choice. It is also the richer source: it carries sale end dates the query often omits.
+
+To restore the lighter request, you need a current hash — and **it cannot be copied from your
+browser**: store.playstation.com never sends this query (its pages are rendered on Sony's
+servers; the operation belongs to Sony's other clients, most likely the PlayStation App).
+Open-source PlayStation Store libraries publish these hashes, so search GitHub code for
+`metGetPricingDataByConceptId` and take the most recently updated value. Then copy
+`ps-store-queries.json` next to your `.env`, replace `sha256Hash`, and click **Reload keys** in
+Settings — no restart needed. The notice clears itself after the next successful refresh.
+
+Prices that only PlayStation Plus members get are ignored on both paths. A game in the Plus
+catalogue has a member price of €0.00, and treating that as a purchase price made such games
+look "100% off" to everyone; a game you can only get through Plus now simply has no
+PlayStation price.
 
 Any store can also be priced by hand from the game's price panel — which is how **Nintendo
 and Xbox** prices get in. Neither has an automatic source: Xbox has no usable free API, and
