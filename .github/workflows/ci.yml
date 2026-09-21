@@ -9,6 +9,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only unless a job asks for more — only the release job does. Set here
+# rather than left to the repository's default, which can be changed.
+permissions:
+  contents: read
+
 # A newer push to the same branch makes an in-flight run irrelevant. Tag runs
 # have their own group and a release build is never worth cancelling.
 concurrency:
@@ -110,3 +115,69 @@ jobs:
             src-tauri/target/**/release/bundle/macos/*.app
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
+
+  release:
+    name: Release
+    # Only a pushed version tag becomes a GitHub Release. A manual run still
+    # bundles installers as workflow artifacts, but publishes nothing.
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # The only job that can write to the repository, and only to create the
+    # release. Everything else keeps the read-only default.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # actions/checkout can leave an annotated tag behind as a lightweight
+      # ref, which has no message. Fetch the tag object itself: its message is
+      # the release notes, so they are written once, at tagging time.
+      - name: Read the release notes from the tag
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          # Checked by type, not by an empty message: for a lightweight tag,
+          # %(contents) silently falls back to the commit's message, which
+          # would publish the commit subject as the release title.
+          if [ "$(git tag -l --format='%(objecttype)' "$GITHUB_REF_NAME")" != "tag" ]; then
+            echo "::error::${GITHUB_REF_NAME} is not an annotated tag — its message is the release notes (git tag -a)."
+            exit 1
+          fi
+          git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME" > title.txt
+          git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > notes.md
+
+      # Both platforms' bundles, one directory per artifact.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gametracker-*
+          path: dist
+
+      # One job publishes, after both bundles exist: two matrix legs creating
+      # the same release at once would race. The .app is left out — it is a
+      # directory, and the .dmg already contains it.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=()
+          while IFS= read -r f; do files+=("$f"); done < <(
+            find dist -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) | sort
+          )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no installers found in the downloaded artifacts"
+            exit 1
+          fi
+          printf 'attaching %s\n' "${files[@]}"
+
+          # Re-running a tag's workflow replaces the files rather than failing
+          # on "release already exists".
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$(cat title.txt)" \
+              --notes-file notes.md
+          fi

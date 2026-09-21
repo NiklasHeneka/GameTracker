@@ -150,6 +150,14 @@ cd src-tauri && cargo test --lib live -- --ignored --nocapture
 
 ## Building installers
 
+**Released versions** are on the [Releases page](https://github.com/NiklasHeneka/GameTracker/releases):
+pushing an annotated `v*` tag builds a universal macOS `.dmg` plus a Windows `.msi` and NSIS
+`-setup.exe`, and publishes them with the tag's message as the release notes. The tag must be
+annotated (`git tag -a`) — the release job refuses a lightweight one rather than publish a
+commit subject as the title.
+
+To build locally:
+
 ```bash
 npm run app:build
 ```
