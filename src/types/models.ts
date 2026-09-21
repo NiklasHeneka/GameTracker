@@ -7,7 +7,6 @@ export interface Settings {
   notificationsEnabled: boolean;
   enabledShops: string[];
   trackPlaystation: boolean;
-  trackNintendo: boolean;
   /** Resolved SteamID64, remembered after the first import. */
   steamId: string | null;
 }

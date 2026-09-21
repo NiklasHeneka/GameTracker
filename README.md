@@ -2,7 +2,7 @@
 
 A desktop tracker for the games you own, the ones you want, and what they cost right now.
 Tauri 2 + Vue 3, local-first SQLite, metadata from IGDB, prices from IsThereAnyDeal,
-CheapShark and PlatPrices.
+CheapShark and the PlayStation Store.
 
 Personal, non-commercial project. See [docs/PLAN.md](docs/PLAN.md) for the full design.
 
@@ -99,8 +99,11 @@ If PlayStation prices stop working, the app will say so in as many words. To fix
 store.playstation.com, watch the network tab for a request to `/api/graphql/v1/op`, and copy
 the `sha256Hash` from its `extensions` parameter into the file.
 
-Any store can also be priced by hand from the game's price panel — useful for Xbox, which has
-no usable free API. Manual prices are never overwritten by an automatic refresh.
+Any store can also be priced by hand from the game's price panel — which is how **Nintendo
+and Xbox** prices get in. Neither has an automatic source: Xbox has no usable free API, and
+Nintendo's price endpoint works but IGDB has no eShop id to match a game to, so every lookup
+would hang on a fuzzy title search. Manual prices are never overwritten by an automatic
+refresh.
 
 ## Sale calendar
 
@@ -183,4 +186,4 @@ image CDNs.
 Game metadata and playtimes by [IGDB](https://www.igdb.com/). Review scores by
 [Steam](https://store.steampowered.com/). Prices by
 [IsThereAnyDeal](https://isthereanydeal.com/) and [CheapShark](https://www.cheapshark.com/).
-PlayStation prices powered by [PlatPrices](https://platprices.com/).
+PlayStation prices from the [PlayStation Store](https://store.playstation.com/).

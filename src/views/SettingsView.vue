@@ -227,8 +227,7 @@ async function reveal() {
             </button>
           </div>
           <p class="mt-2 text-[11px] text-ink-faint">
-            PlayStation prices arrive with the PlayStation Store integration; the shop is
-            listed here so it is ready when they do.
+            PC stores come from IsThereAnyDeal; PlayStation Store from Sony directly.
           </p>
         </section>
 
@@ -241,7 +240,7 @@ async function reveal() {
               <span class="min-w-0 flex-1">
                 <span class="block text-[13px]">Check prices every</span>
                 <span class="mt-0.5 block text-[11.5px] text-ink-faint">
-                  Wishlist entries only, in the background.
+                  Your wishlist and anything unowned on Play Next, in the background.
                 </span>
               </span>
               <select
@@ -280,8 +279,8 @@ async function reveal() {
               <span class="min-w-0 flex-1">
                 <span class="block text-[13px]">PlayStation prices</span>
                 <span class="mt-0.5 block text-[11.5px] text-ink-faint">
-                  Via PlatPrices. Free tier is 1000 requests per month, so only wishlist
-                  entries are refreshed.
+                  From the PlayStation Store itself. Nintendo and Xbox prices can be
+                  recorded by hand from a game's detail panel.
                 </span>
               </span>
               <input
@@ -294,23 +293,6 @@ async function reveal() {
               />
             </label>
 
-            <label class="flex items-center gap-4 px-4 py-3">
-              <span class="min-w-0 flex-1">
-                <span class="block text-[13px]">Nintendo eShop prices</span>
-                <span class="mt-0.5 block text-[11.5px] text-ink-faint">
-                  Uses an undocumented Nintendo endpoint. Off by default — if it breaks it
-                  only affects this one row of the deals panel.
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                class="h-4 w-4 accent-accent"
-                :checked="settings.trackNintendo"
-                @change="
-                  store.patch({ trackNintendo: ($event.target as HTMLInputElement).checked })
-                "
-              />
-            </label>
           </div>
         </section>
 

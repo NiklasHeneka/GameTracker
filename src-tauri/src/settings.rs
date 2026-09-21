@@ -33,8 +33,6 @@ pub struct Settings {
     /// the four or five stores a person actually buys from.
     pub enabled_shops: Vec<String>,
     pub track_playstation: bool,
-    /// Off by default: rides on an undocumented Nintendo endpoint.
-    pub track_nintendo: bool,
     /// Resolved SteamID64, remembered after the first import.
     pub steam_id: Option<String>,
 }
@@ -49,7 +47,6 @@ impl Default for Settings {
             notifications_enabled: true,
             enabled_shops: DEFAULT_SHOPS.iter().map(|s| (*s).to_string()).collect(),
             track_playstation: true,
-            track_nintendo: false,
             steam_id: None,
         }
     }
@@ -66,7 +63,6 @@ pub struct SettingsPatch {
     pub notifications_enabled: Option<bool>,
     pub enabled_shops: Option<Vec<String>>,
     pub track_playstation: Option<bool>,
-    pub track_nintendo: Option<bool>,
     /// Doubly wrapped so `null` can clear a stored id, rather than reading as
     /// "leave it alone" the way a plain Option would.
     #[serde(deserialize_with = "crate::db::models::double_option")]
@@ -95,9 +91,6 @@ impl SettingsPatch {
         }
         if let Some(v) = self.track_playstation {
             s.track_playstation = v;
-        }
-        if let Some(v) = self.track_nintendo {
-            s.track_nintendo = v;
         }
         if let Some(v) = self.steam_id {
             s.steam_id = v.filter(|id| !id.trim().is_empty());
@@ -178,6 +171,24 @@ mod tests {
             DEFAULT_SHOPS.len(),
             "an empty list must mean 'not chosen', not 'every keyseller'"
         );
+    }
+
+    #[test]
+    fn a_setting_that_no_longer_exists_is_ignored_not_an_error() {
+        let conn = db();
+        // `trackNintendo` was a toggle with no integration behind it and has
+        // been removed. Every existing database and every backup still carries
+        // it, so reading one must neither fail nor lose the other settings.
+        set_setting(
+            &conn,
+            KEY,
+            r#"{"country":"AT","currency":"EUR","trackPlaystation":false,"trackNintendo":true}"#,
+        )
+        .unwrap();
+
+        let s = read(&conn).unwrap();
+        assert_eq!(s.country, "AT");
+        assert!(!s.track_playstation);
     }
 
     #[test]

@@ -521,6 +521,14 @@ already built, for the platform explicitly called out as least important.
 Nintendo is not unserved in the meantime: manual price entry offers "Nintendo eShop" as a
 platform, and those prices survive every automatic refresh.
 
+**Update, after Phase 5 — manual entry is the answer, and the toggle is gone.** Settings had
+kept a "Nintendo eShop prices" switch from the original plan, persisted as `trackNintendo`,
+with a description promising an undocumented endpoint. Nothing ever read it: there is no
+Nintendo client, and flipping it did nothing at all. Adding Switch games from IGDB (covers and
+all) and pricing them by hand is enough, so the switch and the setting were removed rather than
+built. Settings documents and backups written earlier still carry the key; serde ignores it
+and a test pins that down.
+
 **Phase 4 — ship** — ✅ **done except the updater**
 - ✅ App icon: the same 2×2 mark as the sidebar, generated from a committed
   `icon-source.png` so the set can be rebuilt.
@@ -889,8 +897,9 @@ Done for 5b:
 
 ## 10. Decisions taken
 
-- **Platforms: PC and PlayStation are first-class**, Nintendo Switch is a feature-flagged extra,
-  **Xbox is out of scope**. This is why PlatPrices moved from "optional Phase 3" into Phase 2b
+- **Platforms: PC and PlayStation are first-class**, Nintendo Switch and Xbox are priced by
+  hand only. (Nintendo was originally a feature-flagged extra; the flag never had anything
+  behind it and was removed — see Phase 3.) This is why PlatPrices moved from "optional Phase 3" into Phase 2b
   and why the deals panel groups prices by platform family from the start.
 - **Steam library import is in** (Phase 3), additive and re-runnable, needs a free Steam Web API
   key and a public profile. Key is in place.
