@@ -296,7 +296,7 @@ GameTracker/
       ├─ main.rs  lib.rs
       ├─ db/         mod.rs  migrations.rs  models.rs  queries.rs
       ├─ commands/   library.rs  search.rs  prices.rs  settings.rs  stats.rs  import.rs
-      ├─ clients/    igdb.rs  itad.rs  cheapshark.rs  platprices.rs  nintendo.rs  steam.rs
+      ├─ clients/    igdb.rs  itad.rs  cheapshark.rs  ps_store.rs  steam.rs
       ├─ services/   metadata.rs  pricing.rs  sale_estimate.rs  refresh.rs  notify.rs
       ├─ util/       rate_limit.rs  cache.rs  keyring.rs  error.rs
       └─ sale_calendar.json
@@ -885,8 +885,10 @@ Done for 5b:
    per-application access. For free, non-commercial, rate-limited hobby keys that is a fair
    trade for being able to edit one file. Worth revisiting if a key ever gains billing rights.
 4. **Attribution is a licence condition**, not a nicety: ITAD requires a link/credit and
-   forbids stripping affiliate tags from the URLs it returns; PlatPrices requires
-   "Powered by PlatPrices". Build these into the deals panel from the start.
+   forbids stripping affiliate tags from the URLs it returns. Build this into the deals panel
+   from the start. (PlatPrices' "Powered by" requirement fell away with PlatPrices itself —
+   no key was ever issued, and `PLATPRICES_API_KEY` was removed after Phase 5 because
+   nothing read it.)
 5. **Steam appid is the universal join key.** Get it from IGDB `external_games`, and prefer
    it over title matching everywhere — title lookup gets remasters and editions wrong.
 6. **Undocumented endpoints** (Nintendo `api.ec.nintendo.com`, Steam `appdetails`) can change

@@ -11,7 +11,6 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("IGDB_CLIENT_ID", "IGDB / Twitch Client ID", true),
     ("IGDB_CLIENT_SECRET", "IGDB / Twitch Client Secret", true),
     ("ITAD_API_KEY", "IsThereAnyDeal API key", false),
-    ("PLATPRICES_API_KEY", "PlatPrices API key", false),
     ("STEAM_API_KEY", "Steam Web API key", false),
 ];
 
@@ -19,12 +18,10 @@ pub const KEYS: &[(&str, &str, bool)] = &[
 /// values must never cross the IPC boundary into the webview. The frontend
 /// only ever sees [`ConfigStatus`].
 #[derive(Debug, Default, Clone)]
-#[allow(dead_code)] // read by the API clients from Phase 1 onwards
 pub struct Credentials {
     pub igdb_client_id: Option<String>,
     pub igdb_client_secret: Option<String>,
     pub itad_api_key: Option<String>,
-    pub platprices_api_key: Option<String>,
     pub steam_api_key: Option<String>,
 }
 
@@ -41,7 +38,6 @@ impl Credentials {
             igdb_client_id: get("IGDB_CLIENT_ID"),
             igdb_client_secret: get("IGDB_CLIENT_SECRET"),
             itad_api_key: get("ITAD_API_KEY"),
-            platprices_api_key: get("PLATPRICES_API_KEY"),
             steam_api_key: get("STEAM_API_KEY"),
         }
     }
@@ -129,10 +125,6 @@ IGDB_CLIENT_SECRET=
 # IsThereAnyDeal (optional, Phase 2) — https://isthereanydeal.com/apps/my/
 # Without it the app falls back to CheapShark, which needs no key.
 ITAD_API_KEY=
-
-# PlatPrices (optional, Phase 2b — PlayStation prices) — https://platprices.com/developers.php
-# Free tier: 1000 requests/month, non-commercial only.
-PLATPRICES_API_KEY=
 
 # Steam Web API (optional, Phase 3 — library import) — https://steamcommunity.com/dev/apikey
 # Your Steam profile and game details must be public for the import to see them.

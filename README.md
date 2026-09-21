@@ -38,7 +38,6 @@ or reload it without restarting.
 |---|---|---|
 | `IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET` | **Required.** Covers, genres, platforms, search | [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) — redirect URL `http://localhost` |
 | `ITAD_API_KEY` | Better PC prices, sale expiry, price history | [isthereanydeal.com/apps/my](https://isthereanydeal.com/apps/my/) |
-| `PLATPRICES_API_KEY` | PlayStation prices — *not currently obtainable* | PlatPrices issues keys only to qualifying projects; a personal tracker does not qualify. The variable stays supported in case that changes. |
 | `STEAM_API_KEY` | Library import with playtime | [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) |
 
 Only the IGDB pair is required. Without an ITAD key, prices fall back to CheapShark, which
