@@ -1,6 +1,6 @@
 [package]
 name = "gametracker"
-version = "0.2.0"
+version = "0.2.1"
 description = "Track the games you own, the ones you want, and what they cost right now"
 authors = ["Niklas Heneka"]
 license = "MIT"
