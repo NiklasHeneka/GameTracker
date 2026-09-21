@@ -12,6 +12,12 @@ export function money(amount: number, currency: string): string {
   }
 }
 
+/** Round for display: `34.6666…` → `34.67`, and `5` stays `5` rather than `5.00`. */
+export function roundTo(value: number, places = 2): number {
+  const f = 10 ** places;
+  return Math.round(value * f) / f;
+}
+
 export function shortDate(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
     day: "numeric",

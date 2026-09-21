@@ -6,6 +6,7 @@ import DealsPanel from "./DealsPanel.vue";
 import { getGame } from "@/api/library";
 import { igdbImage, releaseYear } from "@/composables/useIgdbImage";
 import { BUCKETS, bucketOf } from "@/composables/buckets";
+import { roundTo } from "@/composables/useFormat";
 import { useLibraryStore } from "@/stores/library";
 import type { GameDetail, LibraryEntry } from "@/types/models";
 
@@ -171,9 +172,9 @@ async function remove() {
             <input
               type="number"
               min="0"
-              step="0.5"
+              step="any"
               class="w-full rounded-lg border border-line bg-elevated px-2.5 py-2 text-[12.5px]"
-              :value="entry.hoursPlayed ?? ''"
+              :value="entry.hoursPlayed == null ? '' : roundTo(entry.hoursPlayed, 2)"
               @change="setNumber('hoursPlayed', ($event.target as HTMLInputElement).value)"
             />
           </label>

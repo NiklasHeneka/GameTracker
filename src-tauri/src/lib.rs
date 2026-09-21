@@ -33,7 +33,16 @@ pub fn run() {
             // the Settings screen can point at a file that actually exists.
             let (credentials, env_path) = config::load(&handle)?;
 
-            let db_path = handle.path().app_data_dir()?.join("gametracker.db");
+            // Development and installed builds share an app identifier, and so
+            // a data folder. Without a separate file the installed app opened
+            // whatever the dev build had put there — test imports, probes, a
+            // saved Steam ID — and looked as if it had shipped with them.
+            let db_name = if cfg!(debug_assertions) {
+                "gametracker-dev.db"
+            } else {
+                "gametracker.db"
+            };
+            let db_path = handle.path().app_data_dir()?.join(db_name);
             let db = db::Db::open(&db_path)?;
 
             // Materialise defaults on first run so the settings row is never

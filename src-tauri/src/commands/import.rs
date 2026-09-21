@@ -178,7 +178,7 @@ pub async fn import_steam_library(
             continue;
         };
 
-        let hours = game.playtime_forever as f64 / 60.0;
+        let hours = minutes_to_hours(game.playtime_forever);
         // Recently played is the one status worth inferring; "finished" is
         // never guessed, because Steam cannot know.
         let status = if game.playtime_2weeks > 0 {
@@ -272,9 +272,25 @@ pub async fn import_steam_library(
     Ok(report)
 }
 
+/// Steam reports whole minutes; stored as hours to two decimals. Unrounded,
+/// 2080 minutes became 34.6666666666667 and was shown that way.
+fn minutes_to_hours(minutes: i64) -> f64 {
+    (minutes as f64 / 60.0 * 100.0).round() / 100.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn playtime_is_stored_to_two_decimals() {
+        // Starfield's real figure: 2080 minutes.
+        assert_eq!(minutes_to_hours(2080), 34.67);
+        assert_eq!(minutes_to_hours(581), 9.68);
+        assert_eq!(minutes_to_hours(300), 5.0);
+        assert_eq!(minutes_to_hours(1), 0.02);
+        assert_eq!(minutes_to_hours(0), 0.0);
+    }
 
     fn game(appid: i64, minutes: i64) -> OwnedGame {
         serde_json::from_str(&format!(

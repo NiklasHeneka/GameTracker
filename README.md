@@ -26,6 +26,9 @@ directory (installed builds), and a SQLite database at:
 - macOS — `~/Library/Application Support/com.niklasheneka.gametracker/gametracker.db`
 - Windows — `%APPDATA%\com.niklasheneka.gametracker\gametracker.db`
 
+A development build (`npm run app`) uses `gametracker-dev.db` in the same folder instead, so
+nothing done while developing ever shows up in the installed app.
+
 ## Credentials
 
 All keys live in `.env`, which is git-ignored and created with owner-only permissions.
